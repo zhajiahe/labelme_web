@@ -52,9 +52,6 @@ source = "vcs"
 [tool.hatch.build.targets.wheel]
 packages = ["labelme"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"labelme/_web" = "labelme/_web"
-
 [dependency-groups]
 dev = [
   "ipython",
