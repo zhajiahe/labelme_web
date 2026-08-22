@@ -44,9 +44,6 @@ It is written in Python and runs as a local web application in your browser.
 <img src="https://user-images.githubusercontent.com/4310419/47907116-85667800-de82-11e8-83d0-b9f4eb33268f.gif" width="30%" /> <img src="https://user-images.githubusercontent.com/4310419/47922172-57972880-deae-11e8-84f8-e4324a7c856a.gif" width="30%" /> <img src="https://user-images.githubusercontent.com/14256482/46932075-92145f00-d080-11e8-8d09-2162070ae57c.png" width="32%" />\
 <i>Various primitives (polygon, rectangle, circle, line, and point).</i>
 
-<img src="https://github.com/user-attachments/assets/53bf09db-b097-48b7-9f32-ab490da5ac53" width="32%" />
-<p><i>Multi-language support (English, 中文, 日本語, 한국어, Deutsch, Français, and more).</i></p>
-
 ## Features
 
 - [x] Image annotation for polygon, rectangle, circle, line and point ([tutorial](examples/tutorial))
@@ -57,8 +54,6 @@ It is written in Python and runs as a local web application in your browser.
 - [x] Exporting COCO-format dataset for [instance segmentation](examples/instance_segmentation)
 - [x] AI-assisted point-to-polygon/mask annotation by SAM, EfficientSAM models
 - [x] AI text-to-annotation by YOLO-world, SAM3 models
-
-**🌏 Available in 20 languages** - English · 日本語 · 한국어 · 简体中文 · 繁體中文 · Deutsch · Ελληνικά · Français · Español · Italiano · Português · Nederlands · Magyar · Русский · ไทย · Tiếng Việt · Türkçe · Українська · Polski · فارسی (`LANG=ja_JP.UTF-8 labelme`)
 
 ## Installation
 
@@ -196,8 +191,7 @@ pyinstaller labelme/labelme/__main__.py \
   --add-data=$(OSAM_PATH)/_models/yoloworld/clip/bpe_simple_vocab_16e6.txt.gz:osam/_models/yoloworld/clip \
   --add-data=$(LABELME_PATH)/_config/default_config.yaml:labelme/_config \
   --add-data=$(LABELME_PATH)/_web:labelme/_web \
-  --add-data=$(LABELME_PATH)/icons/*:labelme/icons \
-  --add-data=$(LABELME_PATH)/translate/*:translate \
+  --add-data=$(LABELME_PATH)/icons/icon-256.png:labelme/icons \
   --icon=$(LABELME_PATH)/icons/icon-256.png \
   --onedir
 ```

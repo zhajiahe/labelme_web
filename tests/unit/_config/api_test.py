@@ -191,6 +191,44 @@ def test_load_config_tolerates_both_polygon_and_shape_shortcuts(
     assert "delete_polygon" not in config["shortcuts"]
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        "language",
+        "flag_dock",
+        "label_dock",
+        "shape_dock",
+        "file_dock",
+        "fit_to_content",
+    ],
+)
+def test_migrate_removes_qt_leftover_keys(key: str) -> None:
+    config = {key: "ja_JP" if key == "language" else {"show": False}}
+    _config._migrate_config_from_file(config)
+    assert key not in config
+
+
+def test_load_config_tolerates_qt_leftover_keys(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "language: ja_JP\nflag_dock:\n  show: false\nfit_to_content:\n  row: true\n"
+    )
+    config = _config.load_config(config_file=config_file, config_overrides={})
+    assert "language" not in config
+    assert "flag_dock" not in config
+    assert "fit_to_content" not in config
+    assert config["auto_save"] is True
+
+
+def test_load_config_drops_qt_leftover_overrides() -> None:
+    config = _config.load_config(
+        config_file=None,
+        config_overrides={"language": "ja_JP", "flag_dock": {"show": False}},
+    )
+    assert "language" not in config
+    assert "flag_dock" not in config
+
+
 def test_migrate_removes_add_point_to_edge_shortcut() -> None:
     config = {"shortcuts": {"add_point_to_edge": "Ctrl+X"}}
     _config._migrate_config_from_file(config)

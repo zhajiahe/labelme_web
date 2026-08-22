@@ -20,5 +20,5 @@ theming is CSS (`color_theme`). Window geometry is not persisted.
 - CLI flags (`--labels`, `--flags`, `--config`, `--output`, …) still configure
   the session; `--host` / `--port` / `--no-browser` bind the service.
 - GUI QA drives a browser at localhost, not a QMainWindow.
-- Translation catalogs (`.ts`) remain as locale identity; the first web UI
-  ships English chrome.
+- The web UI ships English chrome. Qt `.ts`/`.qm` catalogs and the Language
+  setting are not used.

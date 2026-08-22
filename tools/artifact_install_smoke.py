@@ -5,7 +5,6 @@ from pathlib import Path
 import onnxruntime  # noqa: F401  # load DLLs before other native extensions on Windows
 
 import labelme
-from labelme import _locale
 from labelme._config import load_config
 from labelme._session import AnnotationSession
 from labelme._webapp import create_app
@@ -24,10 +23,6 @@ def _check_packaged_resources() -> None:
     web_index = Path(labelme.__file__).parent / "_web" / "index.html"
     if not web_index.is_file():
         raise RuntimeError(f"packaged web UI is missing: {web_index}")
-
-    locales = _locale.available_translation_locales()
-    if not locales:
-        raise RuntimeError("packaged artifact ships no translation catalogs")
 
 
 def _check_application_starts() -> None:

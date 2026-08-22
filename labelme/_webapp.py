@@ -196,7 +196,6 @@ def _session_payload(session: AnnotationSession) -> dict[str, Any]:
                 "keep_prev_brightness_contrast"
             ),
             "color_theme": session.config.get("color_theme", "system"),
-            "language": session.config.get("language"),
             "labels": session.config.get("labels") or [],
             "flags": session.config.get("flags") or [],
             "label_flags": session.config.get("label_flags") or {},

@@ -1,6 +1,6 @@
 # labelme
 
-The domain language of labelme, a desktop image-annotation tool. This glossary covers the user-facing data model — what an annotated Image consists of and how its parts relate.
+The domain language of labelme, a local web image-annotation tool. This glossary covers the user-facing data model — what an annotated Image consists of and how its parts relate.
 
 ## Language
 
@@ -85,7 +85,7 @@ The user-adjustable annotation and behavior values (auto-save, drawing colors, s
 _Avoid_: preferences (only the historical menu label), config (that is the file, not the values), options.
 
 **Setting Control**:
-A UI element bound to a Setting that displays and edits its value: a checkable menu/toolbar action, an inline dock control, or a widget in the Settings dialog. Inline controls are reserved for Settings toggled frequently or meaningful only in context; the Settings dialog is the comprehensive home that exposes every Setting. Multiple Setting Controls for one Setting stay in sync through a single apply path.
+A UI element bound to a Setting that displays and edits its value: a checkable toolbar control, or a widget in the Settings dialog. Inline controls are reserved for Settings toggled frequently or meaningful only in context; the Settings dialog is the comprehensive home that exposes every Setting. Multiple Setting Controls for one Setting stay in sync through a single apply path.
 _Avoid_: toggle (only one kind), widget, knob.
 
 **Preview Setting**:

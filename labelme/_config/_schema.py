@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import dataclasses
-import typing
 from typing import Final
 from typing import Literal
 
 from .._ai_models import AI_ASSIST_MODEL_OPTIONS
 
 Group = Literal[
-    "Appearance and language",
+    "Appearance",
     "Files and saving",
     "Drawing and canvas",
     "Continue between images",
@@ -16,10 +15,7 @@ Group = Literal[
     "Label behavior",
     "AI assist",
 ]
-Kind = Literal["bool", "enum", "str_list", "language"]
-
-_TRANSLATABLE_GROUPS: Final = typing.get_args(Group)
-assert set(_TRANSLATABLE_GROUPS) == set(typing.get_args(Group))
+Kind = Literal["bool", "enum", "str_list"]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -44,18 +40,11 @@ class Setting:
 SETTINGS: Final[tuple[Setting, ...]] = (
     Setting(
         key_path=("color_theme",),
-        group="Appearance and language",
+        group="Appearance",
         label="Color theme",
         kind="enum",
         choices=("system", "light", "dark"),
         choice_labels=("System", "Light", "Dark"),
-    ),
-    Setting(
-        key_path=("language",),
-        group="Appearance and language",
-        label="Language",
-        kind="language",
-        note="Takes effect after restart.",
     ),
     Setting(
         key_path=("auto_save",),

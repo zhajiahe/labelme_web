@@ -65,8 +65,26 @@ def _validate_config_item(key: str, value: object) -> None:
             )
 
 
+_REMOVED_QT_CONFIG_KEYS: tuple[str, ...] = (
+    "language",
+    "flag_dock",
+    "label_dock",
+    "shape_dock",
+    "file_dock",
+    "fit_to_content",
+)
+
+
+def _drop_removed_config_keys(config: dict) -> None:
+    for key in _REMOVED_QT_CONFIG_KEYS:
+        if key in config:
+            logger.info("Migrating old config: removing {}", key)
+            del config[key]
+
+
 def _migrate_config_from_file(config_from_yaml: dict) -> None:
     migrate_shape_color(config=config_from_yaml)
+    _drop_removed_config_keys(config_from_yaml)
     keep_prev_brightness: bool = config_from_yaml.pop("keep_prev_brightness", False)
     keep_prev_contrast: bool = config_from_yaml.pop("keep_prev_contrast", False)
     if keep_prev_brightness or keep_prev_contrast:
@@ -184,6 +202,7 @@ def load_config(config_file: Path | None, config_overrides: dict) -> dict:
             _update_dict(config, config_from_yaml, validate_item=_validate_config_item)
 
     config_overrides = copy.deepcopy(config_overrides)
+    _drop_removed_config_keys(config_overrides)
     migrate_shape_color(config=config_overrides)
     if "shape_color" in config_overrides:
         validate_shape_color(config=config_overrides["shape_color"])
