@@ -2,7 +2,7 @@ ifneq ($(OS),Windows_NT)
 	SHELL := bash
 endif
 
-.PHONY: help setup format lint test coverage update_translate check_translate
+.PHONY: help setup format lint test coverage
 .DEFAULT_GOAL := help
 
 PYTEST_ARGS ?= --numprocesses=auto
@@ -36,12 +36,6 @@ format:  # Format code
 
 test:  # Run tests
 	$(call exec,uv run pytest -v tests/ $(PYTEST_ARGS))
-
-update_translate:  # Regenerate the translation catalogs
-	$(call exec,uv run tools/update_translate.py)
-
-check_translate:  # Fail if the translation catalogs are stale or incomplete (CI and release gate)
-	$(call exec,uv run tools/update_translate.py --check)
 
 coverage:  # Run tests with coverage
 	$(MAKE) test PYTEST_ARGS="--cov=labelme --cov-report=term-missing"

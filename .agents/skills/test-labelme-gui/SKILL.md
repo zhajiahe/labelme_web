@@ -1,29 +1,30 @@
 ---
 name: test-labelme-gui
-description: Drive the real Labelme desktop app with computer use and report evidence-backed findings. Use for GUI regression after a change, release acceptance, visual or accessibility inspection, or a reported desktop behavior that pytest cannot reproduce.
+description: Drive the real Labelme web UI in a browser and report evidence-backed findings. Use for GUI regression after a change, release acceptance, visual or accessibility inspection, or a reported desktop behavior that pytest cannot reproduce.
 ---
 
 # Test Labelme GUI
 
-Test what a user sees and touches — menus, pointer and keyboard workflows, dialogs,
-persistence, themes. Keep deterministic logic in pytest; spend this skill on the
-human-visible surface.
+Test what a user sees and touches — toolbars, canvas, pointer and keyboard
+workflows, dialogs, persistence, themes. Keep deterministic logic in pytest;
+spend this skill on the human-visible surface.
 
 ## Launch isolated
 
-Labelme resolves its config (`~/.labelmerc`), caches, and window state through
-`HOME`, so one environment variable isolates a run from the tester's real profile.
-From the repository root, in a shell that stays alive for the whole session:
+Labelme resolves its config (`~/.labelmerc`) and caches through `HOME`, so one
+environment variable isolates a run from the tester's real profile. From the
+repository root, in a shell that stays alive for the whole session:
 
 ```bash
 RUN_DIR=$(mktemp -d)
 cp -R examples/primitives "$RUN_DIR/inputs"
 mkdir "$RUN_DIR/outputs" "$RUN_DIR/evidence"
 HOME="$RUN_DIR" uv run --no-sync labelme "$RUN_DIR/inputs" \
-  --output "$RUN_DIR/outputs" 2>"$RUN_DIR/stderr.log"
+  --output "$RUN_DIR/outputs" --host 127.0.0.1 --port 8080 --no-browser \
+  2>"$RUN_DIR/stderr.log"
 ```
 
-Variants:
+Open `http://127.0.0.1:8080` in a browser. Variants:
 
 - Raw image, no annotations: copy only the `.jpg` into `inputs`.
 - Image sequence: copy from `examples/video_annotation/data_annotated`.
@@ -37,14 +38,14 @@ Keep `RUN_DIR` until the report is delivered; `outputs/`, `stderr.log`, and
 ## Exercise the app
 
 For each check: state the expected outcome first, act as a user would (pointer or
-keyboard, never programmatic widget calls), then verify both the visible result and
-the durable one — the saved JSON in `outputs/`, or the state after a clean restart.
+keyboard, never raw API calls), then verify both the visible result and the
+durable one — the saved JSON in `outputs/`, or the state after a clean restart.
 Screenshot each checkpoint into `evidence/` with names like `02-undo-after-rect.png`.
 
 Core flows, in priority order. A quick check covers the first three; a full sweep
 covers all, plus unscripted exploration of whatever looked surprising along the way:
 
-01. Launch on the annotated example: canvas shapes, label list, file list, and window
+01. Launch on the annotated example: canvas shapes, label list, file list, and page
     title agree.
 02. Draw a rectangle and a polygon, accept labels, undo: the shape disappears from the
     canvas and from the saved JSON.
@@ -53,15 +54,14 @@ covers all, plus unscripted exploration of whatever looked surprising along the 
 04. Edit: select, move, resize, delete a shape; undo restores the exact geometry.
 05. Each remaining shape type (circle, point, line, line strip): correct `shape_type`
     and points in the saved JSON.
-06. Navigate next and previous images; zoom, fit window, brightness/contrast apply and
-    cancel.
-07. Unsaved-changes dialog with auto-save disabled (`--no-auto-save`): Cancel keeps the
-    session, Discard drops the edit, Save writes it.
+06. Navigate next and previous images; zoom, fit window, brightness/contrast apply.
+07. Unsaved-changes with auto-save disabled (`--no-auto-save`): leaving without Save
+    does not write the edit; Save writes it.
 08. Corrupt JSON and missing image: the error names the problem and the session stays
     usable.
-09. Keyboard only: the primary annotate-save flow works by menus and shortcuts, focus
+09. Keyboard only: the primary annotate-save flow works by shortcuts, focus
     stays visible.
-10. Dark and light themes: text legible, icons update, disabled states distinguishable.
+10. Dark and light themes: text legible, disabled states distinguishable.
 11. Accessibility: main controls expose meaningful names and roles.
 
 AI Assist downloads models — exercise it only when the request explicitly authorizes

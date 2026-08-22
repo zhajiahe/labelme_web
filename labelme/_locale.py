@@ -14,7 +14,7 @@ def available_translation_locales() -> list[str]:
     if not TRANSLATE_DIR.is_dir():
         return []
     return sorted(
-        path.stem for path in TRANSLATE_DIR.glob("*.qm") if path.stem != SOURCE_LOCALE
+        path.stem for path in TRANSLATE_DIR.glob("*.ts") if path.stem != SOURCE_LOCALE
     )
 
 

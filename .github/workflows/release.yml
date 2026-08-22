@@ -18,7 +18,6 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v7
-      - run: make check_translate
       - name: Extract release notes from CHANGELOG.md
         id: release_notes
         run: uv run tools/release_notes.py "$GITHUB_REF_NAME" CHANGELOG.md release-notes.md

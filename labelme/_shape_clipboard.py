@@ -1,18 +1,27 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from collections.abc import Iterable
-
-from PySide6 import QtCore
 
 from ._shape import Shape
 
 
-class ShapeClipboard(QtCore.QObject):
-    availability_changed = QtCore.Signal(bool)
+class _Signal:
+    def __init__(self) -> None:
+        self._handlers: list[Callable[[bool], None]] = []
 
-    def __init__(self, parent: QtCore.QObject | None = None) -> None:
-        super().__init__(parent)
+    def connect(self, handler: Callable[[bool], None]) -> None:
+        self._handlers.append(handler)
+
+    def emit(self, value: bool) -> None:
+        for handler in self._handlers:
+            handler(value)
+
+
+class ShapeClipboard:
+    def __init__(self) -> None:
         self._buffer: tuple[Shape, ...] = ()
+        self.availability_changed = _Signal()
 
     def store(self, shapes: Iterable[Shape]) -> None:
         snapshot = tuple(shape.copy() for shape in shapes)

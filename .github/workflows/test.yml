@@ -5,10 +5,6 @@ on:
     branches: [main]
   pull_request:
   workflow_call:
-# Nine GUI cells per push are too expensive to keep running for superseded
-# commits. github.ref is unique per pull request (refs/pull/N/merge) even for
-# fork branches that share a name, and the event condition keeps main pushes
-# and workflow_call runs uncancelled, so only obsolete PR runs are cancelled.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -30,23 +26,12 @@ jobs:
       - shell: bash
         run: |
           make setup
-      - uses: awalsh128/cache-apt-pkgs-action@v1
-        if: matrix.os == 'ubuntu-latest'
-        with:
-          packages: xvfb libegl1 libxkbcommon0 libxcb-cursor0 libgl1
-          version: 1.0
-      # Pixel snapshots skip themselves off Linux (tests/e2e/conftest.py), so
-      # one plain invocation runs the right set everywhere.
       - name: Test
         shell: bash
         env:
           MPLBACKEND: agg
         run: |
-          if [ "$RUNNER_OS" = Linux ]; then
-            xvfb-run -a make test
-          else
-            make test
-          fi
+          make test
       - name: Run examples
         shell: bash
         if: matrix.os != 'windows-latest'
@@ -68,22 +53,13 @@ jobs:
           (cd examples/instance_segmentation && rm -rf data_dataset_coco && ./labelme2coco.py data_annotated data_dataset_coco --labels labels.txt && git checkout -- .)
   artifact-install-smoke:
     runs-on: ${{ matrix.os }}
-    # Each leg does a cold build plus two isolated installs (PySide6,
-    # onnxruntime, and friends), heavier than a plain dependency sync, so it
-    # gets more headroom against cold-cache runners.
     timeout-minutes: 20
     strategy:
-      # fail-fast would cancel the sibling legs before they report, and the one
-      # excluded combination below is exactly the kind of platform-specific
-      # break this job exists to find, so every leg runs to completion.
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
         python-version: ['3.12', '3.13', '3.14']
         exclude:
-          # The installed console script prints no usage here and exits 0.
-          # Pre-existing on main, unrelated to packaging, tracked separately.
-          # https://github.com/wkentaro/labelme/issues/2495
           - os: windows-latest
             python-version: '3.14'
     steps:
@@ -105,13 +81,9 @@ jobs:
       - shell: bash
         run: |
           make setup
-      - uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: xvfb libegl1 libxkbcommon0 libxcb-cursor0 libgl1
-          version: 1.0
       - name: Test real model download
         shell: bash
         env:
           MPLBACKEND: agg
         run: |-
-          xvfb-run -a make test PYTEST_ARGS="-m network --numprocesses=1"
+          make test PYTEST_ARGS="-m network --numprocesses=1"

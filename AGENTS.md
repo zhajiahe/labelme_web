@@ -24,4 +24,4 @@ Treat AI Assist Setting Controls as proactive guidance. Enforce Prompt Compatibi
 
 ### GUI QA
 
-Check human-visible desktop behavior — GUI regression, release acceptance, visual or accessibility inspection — with `.agents/skills/test-labelme-gui/SKILL.md`. Keep deterministic logic in pytest.
+Check human-visible browser behavior — web UI regression, release acceptance, visual or accessibility inspection — with `.agents/skills/test-labelme-gui/SKILL.md`. Keep deterministic logic in pytest.

@@ -2,22 +2,17 @@ from __future__ import annotations
 
 import os
 import sys
-import types
 import warnings
-from collections.abc import Callable
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
 
 import pytest
 from loguru import logger
-from PySide6 import QtCore
 
 from labelme.__main__ import _LOGGER_LEVELS
 from labelme.__main__ import _LoggerIO
 from labelme.__main__ import _parse_list_arg
 from labelme.__main__ import _resolve_config_source
-from labelme.__main__ import _route_qt_logging_to_loguru
 from labelme.__main__ import _setup_loguru
 from labelme.__main__ import main
 
@@ -303,49 +298,11 @@ def test_setup_loguru_degrades_to_stderr_without_localappdata(
     assert "KeyError: 'LOCALAPPDATA'" in err
 
 
-def test_route_qt_logging_drops_noise_and_forwards_the_rest() -> None:
-    _route_qt_logging_to_loguru()
-    handler = cast(
-        "Callable[[QtCore.QtMsgType, object, str], None]",
-        QtCore.qInstallMessageHandler(None),
-    )
-
-    forwarded: list[tuple[str, str]] = []
-    sink_id = logger.add(
-        lambda m: forwarded.append((m.record["level"].name, m.record["message"])),
-        level="DEBUG",
-    )
-    try:
-        keymapper = types.SimpleNamespace(category="qt.qpa.keymapper")
-        fonts = types.SimpleNamespace(category="qt.qpa.fonts")
-        default = types.SimpleNamespace(category="default")
-
-        handler(
-            QtCore.QtMsgType.QtWarningMsg,
-            keymapper,
-            "Mismatch between Cocoa and Carbon",
-        )
-        handler(
-            QtCore.QtMsgType.QtWarningMsg,
-            fonts,
-            "Populating font family aliases took 42 ms",
-        )
-        assert forwarded == []
-
-        handler(
-            QtCore.QtMsgType.QtWarningMsg, fonts, "Found no matching fonts for family"
-        )
-        handler(
-            QtCore.QtMsgType.QtWarningMsg,
-            default,
-            "Populating font family alias mentioned outside qt.qpa.fonts",
-        )
-        handler(QtCore.QtMsgType.QtCriticalMsg, default, "genuine failure")
-    finally:
-        logger.remove(sink_id)
-
-    assert forwarded == [
-        ("WARNING", "qt.qpa.fonts: Found no matching fonts for family"),
-        ("WARNING", "Populating font family alias mentioned outside qt.qpa.fonts"),
-        ("ERROR", "genuine failure"),
-    ]
+def test_help_mentions_the_local_web_service(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["labelme", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    assert "local web service" in capsys.readouterr().out
