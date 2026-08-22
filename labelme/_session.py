@@ -232,6 +232,7 @@ class AnnotationSession:
         self.dirty = False
         self.file_search: str = config.get("file_search") or ""
         self._last_failed_auto_save_path: str | None = None
+        self.load_warning: str | None = None
 
     @property
     def settings_editable(self) -> bool:
@@ -388,6 +389,7 @@ class AnnotationSession:
         self.image_width = None
         self.image_height = None
         self.dirty = False
+        self.load_warning = None
 
     def _import_images_from_dir(self, root_dir: str) -> None:
         self.prev_opened_dir = root_dir
@@ -396,6 +398,7 @@ class AnnotationSession:
 
     def _open_image_or_label(self, *, image_or_label_path: str) -> None:
         image_or_label_path = os.path.normpath(image_or_label_path)
+        self.load_warning = None
         if not Path(image_or_label_path).exists():
             raise SessionLoadError(f"No such file: {image_or_label_path}")
 
@@ -403,13 +406,32 @@ class AnnotationSession:
             image_or_label_path=image_or_label_path,
             output_dir=self.output_dir,
         )
+        fallback_image = (
+            image_or_label_path
+            if not is_label_file_path(filename=image_or_label_path)
+            else None
+        )
         try:
             if Path(label_path).exists():
-                annotation = read_label_file(filename=label_path)
-                image_path = os.path.normpath(
-                    str(Path(label_path).parent / annotation.image_path)
-                )
-                label_file_path = label_path
+                try:
+                    annotation = read_label_file(
+                        filename=label_path, fallback_image=fallback_image
+                    )
+                except LabelFileError as exc:
+                    if fallback_image is None:
+                        raise SessionLoadError(str(exc)) from exc
+                    logger.warning("{}", exc)
+                    self.load_warning = str(exc)
+                    annotation = _read_image_as_annotation(image_path=fallback_image)
+                    image_path = fallback_image
+                    label_file_path = None
+                else:
+                    image_path = os.path.normpath(
+                        str(Path(label_path).parent / annotation.image_path)
+                    )
+                    if fallback_image and not Path(image_path).is_file():
+                        image_path = fallback_image
+                    label_file_path = label_path
             else:
                 annotation = _read_image_as_annotation(image_path=image_or_label_path)
                 image_path = image_or_label_path

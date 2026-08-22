@@ -51,6 +51,22 @@ def test_read_label_file_load_windows_path(data_path: Path, tmp_path: Path) -> N
     assert annotation.image_data is not None
 
 
+def test_read_label_file_uses_fallback_image_when_image_path_is_missing(
+    data_path: Path, tmp_path: Path
+) -> None:
+    jpg = data_path / "annotated" / "2011_000003.jpg"
+    fallback = tmp_path / "opened.jpg"
+    shutil.copy(jpg, fallback)
+    payload = json.loads((data_path / "annotated" / "2011_000003.json").read_text())
+    payload["imagePath"] = "not-here.jpg"
+    label = tmp_path / "2011_000003.json"
+    label.write_text(json.dumps(payload), encoding="utf-8")
+
+    annotation = read_label_file(filename=str(label), fallback_image=str(fallback))
+    assert annotation.shapes
+    assert annotation.image_data
+
+
 @pytest.fixture()
 def annotated_raw(data_path: Path) -> dict[str, Any]:
     src = data_path / "annotated" / "2011_000003.json"

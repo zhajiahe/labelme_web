@@ -125,6 +125,30 @@ def test_validate_label_rejects_unknown(
     assert "invalid label" in response.json()["detail"]
 
 
+def test_open_corrupt_sidecar_stays_usable(data_path: Path, tmp_path: Path) -> None:
+    import shutil
+
+    jpg = next((data_path / "annotated").glob("*.jpg"))
+    shutil.copy(jpg, tmp_path / jpg.name)
+    (tmp_path / f"{jpg.stem}.json").write_text("{ not json", encoding="utf-8")
+
+    config = load_config(config_file=None, config_overrides={})
+    session = AnnotationSession(
+        config=config,
+        config_file=None,
+        config_overrides={},
+        output_dir=None,
+    )
+    client = TestClient(create_app(session=session))
+    response = client.post("/api/session/open", json={"path": str(tmp_path)})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["annotation"] is not None
+    assert payload["annotation"]["shapes"] == []
+    assert payload["load_warning"]
+    assert "failed to load" in payload["load_warning"]
+
+
 def test_ai_point_prompt_compatibility(client: TestClient) -> None:
     response = client.post(
         "/api/ai/assist",

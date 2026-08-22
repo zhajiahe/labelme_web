@@ -185,6 +185,7 @@ def _session_payload(session: AnnotationSession) -> dict[str, Any]:
         "files": _file_entries(session),
         "current_index": session.current_index,
         "dirty": session.dirty,
+        "load_warning": session.load_warning,
         "settings_editable": session.settings_editable,
         "config": {
             "auto_save": session.config.get("auto_save"),

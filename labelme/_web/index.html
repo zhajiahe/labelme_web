@@ -47,18 +47,18 @@
           <button id="btn-delete" type="button">Delete</button>
           <button id="btn-fit" type="button">Fit</button>
           <label class="zoom-label">Zoom
-            <input id="zoom" type="range" min="10" max="800" value="100" />
+            <input id="zoom" type="range" min="10" max="800" value="100" aria-label="Zoom" />
           </label>
           <label class="zoom-label">Bright
-            <input id="brightness" type="range" min="-80" max="80" value="0" />
+            <input id="brightness" type="range" min="-80" max="80" value="0" aria-label="Brightness" />
           </label>
           <label class="zoom-label">Contrast
-            <input id="contrast" type="range" min="-80" max="80" value="0" />
+            <input id="contrast" type="range" min="-80" max="80" value="0" aria-label="Contrast" />
           </label>
         </aside>
 
         <main class="canvas-wrap">
-          <canvas id="canvas"></canvas>
+          <canvas id="canvas" aria-label="Annotation canvas"></canvas>
           <div id="crosshair-x" class="crosshair hidden"></div>
           <div id="crosshair-y" class="crosshair hidden"></div>
         </main>
@@ -100,7 +100,8 @@
     <dialog id="label-dialog">
       <form method="dialog">
         <h2>Shape label</h2>
-        <input id="label-input" type="text" list="label-options" autocomplete="off" />
+        <label for="label-input">Label</label>
+        <input id="label-input" type="text" list="label-options" autocomplete="off" aria-label="Shape label" />
         <datalist id="label-options"></datalist>
         <div id="shape-flag-list" class="flag-grid"></div>
         <label>Group id <input id="group-id" type="number" /></label>

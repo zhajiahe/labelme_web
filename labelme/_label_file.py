@@ -297,7 +297,7 @@ def _check_image_dimensions(
         )
 
 
-def read_label_file(filename: str) -> Annotation:
+def read_label_file(filename: str, *, fallback_image: str | None = None) -> Annotation:
     try:
         with open(filename, encoding="utf-8") as f:
             raw: dict[str, Any] = json.load(f)
@@ -305,9 +305,18 @@ def read_label_file(filename: str) -> Annotation:
         if raw["imageData"] is not None:
             image_data = base64.b64decode(raw["imageData"])
         else:
-            image_data = read_image_file(
-                filename=str(Path(filename).parent / image_path)
-            )
+            stored = str(Path(filename).parent / image_path)
+            if Path(stored).is_file():
+                image_data = read_image_file(filename=stored)
+            elif fallback_image and Path(fallback_image).is_file():
+                logger.warning(
+                    "annotation imagePath {!r} is missing; using {!r}",
+                    stored,
+                    fallback_image,
+                )
+                image_data = read_image_file(filename=fallback_image)
+            else:
+                image_data = read_image_file(filename=stored)
         _check_image_dimensions(
             image_data=image_data,
             expected_height=raw.get("imageHeight"),

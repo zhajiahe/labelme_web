@@ -340,6 +340,9 @@ function renderAll() {
 }
 
 function applySession(session, { resetView = false } = {}) {
+  const previousPath = state.session?.annotation?.image_path;
+  const nextPath = session.annotation?.image_path;
+  if (previousPath !== nextPath) state.history = [];
   state.session = session;
   const annotation = session.annotation;
   state.shapes = annotation ? cloneShapes(annotation.shapes) : [];
@@ -358,6 +361,7 @@ function applySession(session, { resetView = false } = {}) {
   }
   model.value = session.config?.ai?.default || model.value;
   renderAll();
+  if (session.load_warning) setStatus(session.load_warning);
   if (annotation) loadImage(currentIndex(), resetView);
   else {
     state.image = null;
@@ -392,7 +396,7 @@ async function openPath(path) {
     method: "POST",
     body: JSON.stringify({ path }),
   }), { resetView: true });
-  setStatus("Ready");
+  if (!state.session?.load_warning) setStatus("Ready");
 }
 
 async function openIndex(index) {
@@ -400,7 +404,7 @@ async function openIndex(index) {
   applySession(await api(`/api/files/${index}/annotation`).then(async () => api("/api/session")), {
     resetView: !state.session?.config?.keep_prev_scale,
   });
-  setStatus("Ready");
+  if (!state.session?.load_warning) setStatus("Ready");
 }
 
 function payload() {
@@ -842,6 +846,17 @@ $("btn-settings").addEventListener("click", () => {
   $("settings-dialog").showModal();
 });
 
+function isEditingText(event) {
+  const el = event.target;
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  if (tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (tag !== "INPUT") return false;
+  const type = (el.getAttribute("type") || "text").toLowerCase();
+  return !["button", "submit", "checkbox", "radio", "range", "file", "color"].includes(type);
+}
+
 window.addEventListener("keydown", async (event) => {
   const shortcuts = state.session?.config?.shortcuts || {};
   const combo = [
@@ -854,6 +869,13 @@ window.addEventListener("keydown", async (event) => {
     return items.filter(Boolean).some((item) => item.replace("Ctrl+", "Ctrl+").toLowerCase() === combo.toLowerCase()
       || item === event.key);
   };
+  if (isEditingText(event) && event.key !== "Escape") {
+    if (matches(shortcuts.save) || (event.ctrlKey && event.key.toLowerCase() === "s")) {
+      event.preventDefault();
+      save().catch((error) => setStatus(error.message));
+    }
+    return;
+  }
   if (event.key === "Escape") {
     state.draft = null;
     state.aiPoints = [];

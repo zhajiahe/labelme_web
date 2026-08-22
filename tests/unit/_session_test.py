@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import shutil
 from pathlib import Path
 from typing import cast
 
@@ -11,6 +13,7 @@ from loguru import logger
 from labelme import __appname__
 from labelme import _automation
 from labelme import _session
+from labelme._config import load_config
 from labelme._label_file import ShapeDict
 from labelme._shape import Shape
 
@@ -261,3 +264,54 @@ def test_scan_image_files_finds_supported_images(tmp_path: Path) -> None:
     assert any(path.endswith("b.PNG") or path.endswith("b.png") for path in found)
     assert any(path.endswith("c.webp") for path in found)
     assert all(not path.endswith(".txt") for path in found)
+
+
+def _make_session(*, output_dir: Path | None = None) -> _session.AnnotationSession:
+    config = load_config(config_file=None, config_overrides={})
+    return _session.AnnotationSession(
+        config=config,
+        config_file=None,
+        config_overrides={},
+        output_dir=output_dir,
+    )
+
+
+def test_output_json_with_sidecar_image_path_uses_opened_image(
+    data_path: Path, tmp_path: Path
+) -> None:
+    images = tmp_path / "images"
+    output = tmp_path / "output"
+    images.mkdir()
+    output.mkdir()
+    jpg = next((data_path / "annotated").glob("*.jpg"))
+    json_src = jpg.with_suffix(".json")
+    shutil.copy(jpg, images / jpg.name)
+    payload = json.loads(json_src.read_text(encoding="utf-8"))
+    payload["imagePath"] = jpg.name  # sidecar-style; file is not next to the JSON
+    (output / f"{jpg.stem}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    session = _make_session(output_dir=output)
+    session.load_path(str(images))
+
+    assert session.annotation is not None
+    assert session.annotation.shapes
+    assert session.image_path == str(images / jpg.name)
+    assert session.load_warning is None
+
+
+def test_corrupt_sidecar_opens_the_image_and_names_the_problem(
+    data_path: Path, tmp_path: Path
+) -> None:
+    jpg = next((data_path / "annotated").glob("*.jpg"))
+    shutil.copy(jpg, tmp_path / jpg.name)
+    (tmp_path / f"{jpg.stem}.json").write_text("{ not json", encoding="utf-8")
+
+    session = _make_session()
+    session.load_path(str(tmp_path))
+
+    assert session.annotation is not None
+    assert session.annotation.shapes == []
+    assert session.image_path == str(tmp_path / jpg.name)
+    assert session.load_warning is not None
+    assert "failed to load" in session.load_warning
+    assert str(tmp_path / f"{jpg.stem}.json") in session.load_warning
