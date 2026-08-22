@@ -11,7 +11,6 @@ import PIL.ExifTags
 import PIL.Image
 import PIL.ImageOps
 from numpy.typing import NDArray
-from PySide6 import QtGui
 
 
 def img_data_to_pil(img_data: bytes) -> PIL.Image.Image:
@@ -47,27 +46,6 @@ def img_arr_to_data(img_arr: NDArray[np.uint8]) -> bytes:
     img_pil = PIL.Image.fromarray(img_arr)
     img_data = img_pil_to_data(img_pil)
     return img_data
-
-
-def img_qt_to_arr(img_qt: QtGui.QImage) -> NDArray[np.uint8]:
-    w, h, d = img_qt.size().width(), img_qt.size().height(), img_qt.depth()
-    channels = d // 8
-    # bits() spans bytesPerLine() * height; Qt aligns each scanline to a 4-byte
-    # boundary, so a row may be wider than w * channels. Drop the padding.
-    rows = np.frombuffer(bytes(img_qt.bits()), dtype=np.uint8).reshape(
-        (h, img_qt.bytesPerLine())
-    )
-    return rows[:, : w * channels].reshape((h, w, channels))
-
-
-def img_qt_to_rgb_arr(img_qt: QtGui.QImage) -> NDArray[np.uint8]:
-    # The raw-memory conversion above yields BGRA on little-endian for the
-    # 32-bit formats Qt loads images as; force RGB888 first (byte-order
-    # defined on every platform) so callers that feed vision models get
-    # true RGB.
-    return img_qt_to_arr(
-        img_qt=img_qt.convertToFormat(QtGui.QImage.Format.Format_RGB888)
-    )
 
 
 def apply_exif_orientation(image: PIL.Image.Image) -> PIL.Image.Image:

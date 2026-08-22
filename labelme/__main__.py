@@ -1,31 +1,26 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import io
 import os
 import sys
 import traceback
 import types
-import warnings
+import webbrowser
 from pathlib import Path
 from typing import AnyStr
 from typing import Final
 
 from loguru import logger
-from PySide6 import QtCore
-from PySide6 import QtWidgets
 
 from labelme import __appname__
 from labelme import __version__
 
 from . import _config
-from . import _locale
 from . import _yaml
-from ._app import MainWindow
 from ._label_file import is_label_file_path
-from ._utils import apply_color_theme
-from ._utils import new_icon
+from ._webapp import build_session
+from ._webapp import create_app
 
 _LOGGER_LEVELS: Final = ("debug", "info", "warning", "error", "critical")
 
@@ -50,9 +45,6 @@ def _setup_loguru(logger_level: str) -> None:
     if sys.stderr:
         logger.add(sys.stderr, level=logger_level)
 
-    # The log file is best-effort: a read-only or otherwise restricted home must
-    # not stop labelme from starting, since the stderr sink above already keeps
-    # logging functional.
     try:
         if os.name == "nt":
             cache_dir = Path(os.environ["LOCALAPPDATA"]) / "labelme"
@@ -74,55 +66,11 @@ def _setup_loguru(logger_level: str) -> None:
             diagnose=True,
         )
     except Exception as e:
-        # Broad like _config.get_user_config_file: Path.expanduser alone raises
-        # RuntimeError rather than OSError when the home cannot be determined.
-        # str() keeps the path an OSError names, while the type name keeps a bare
-        # KeyError('LOCALAPPDATA') readable.
         logger.warning(
             "Failed to set up the log file, logging to stderr only: {}: {}",
             type(e).__name__,
             e,
         )
-
-
-def _route_qt_logging_to_loguru() -> None:
-    # Qt logs through its own handler straight to the C stderr, bypassing loguru
-    # and the log file. Route it through loguru instead, dropping two harmless
-    # noise sources so genuine Qt warnings still surface. The macOS keymapper
-    # flood ("Mismatch between Cocoa and Carbon", one line per keypress) is
-    # dropped by category, since qt.qpa.keymapper carries only low-value keyboard
-    # diagnostics. The font-alias timing chatter is dropped by message text
-    # within its category, since qt.qpa.fonts also reports real font-loading
-    # failures worth keeping.
-    LEVELS: Final = {
-        QtCore.QtMsgType.QtDebugMsg: "DEBUG",
-        QtCore.QtMsgType.QtInfoMsg: "INFO",
-        QtCore.QtMsgType.QtWarningMsg: "WARNING",
-        QtCore.QtMsgType.QtCriticalMsg: "ERROR",
-        QtCore.QtMsgType.QtFatalMsg: "CRITICAL",
-    }
-
-    def handler(
-        mode: QtCore.QtMsgType, context: QtCore.QMessageLogContext, message: str
-    ) -> None:
-        if context.category == "qt.qpa.keymapper":
-            return
-        if (
-            context.category == "qt.qpa.fonts"
-            and "Populating font family alias" in message
-        ):
-            return
-        if context.category != "default":
-            # Keep the category prefix Qt's default handler would have printed.
-            message = f"{context.category}: {message}"
-        logger.log(LEVELS.get(mode, "INFO"), message)
-        if mode == QtCore.QtMsgType.QtFatalMsg:
-            # Qt calls abort() as soon as this handler returns, which skips the
-            # atexit drain of the enqueue=True file sink; flush it now so the
-            # line explaining the crash reaches the log file.
-            logger.complete()
-
-    QtCore.qInstallMessageHandler(handler)
 
 
 def _handle_exception(
@@ -138,16 +86,6 @@ def _handle_exception(
         traceback.format_exception(exc_type, exc_value, exc_traceback)
     )
     logger.critical(traceback_str)
-
-    traceback_html: str = traceback_str.replace("\n", "<br/>").replace(" ", "&nbsp;")
-    QtWidgets.QMessageBox.critical(
-        None,
-        "Error",
-        f"An unexpected error occurred. The application will close.<br/><br/>Please report issues following the <a href='https://labelme.io/docs/troubleshoot'>Troubleshoot</a>.<br/><br/>{traceback_html}",  # noqa: E501
-    )
-
-    if app := QtWidgets.QApplication.instance():
-        app.quit()
     sys.exit(1)
 
 
@@ -167,6 +105,8 @@ class _DeprecatedAlias(argparse.Action):
     ) -> None:
         canonical = self.option_strings[0]
         if option_string is not None and option_string != canonical:
+            import warnings
+
             warnings.warn(
                 f"{option_string} is deprecated and will be removed in a future "
                 f"version. Use {canonical} instead.",
@@ -187,9 +127,6 @@ def _resolve_config_source(
     config_arg: str | None, default_config_file: str
 ) -> tuple[Path | None, dict]:
     if config_arg is None:
-        # A missing file is fatal only when the user asked for that file: the
-        # default path may not exist because it could not be created, and
-        # labelme still runs on the built-in defaults.
         if not os.path.isfile(default_config_file):
             logger.warning(
                 "Config file does not exist: {!r}; using the default settings",
@@ -209,13 +146,13 @@ def _resolve_config_source(
     return Path(config_arg), {}
 
 
-def main() -> None:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", "-V", action="store_true", help="show version")
     parser.add_argument(
         "--reset-config",
         action="store_true",
-        help="reset window geometry and dock layout",
+        help="ignored; kept for CLI compatibility (window state is no longer stored)",
     )
     parser.add_argument(
         "--logger-level",
@@ -235,7 +172,22 @@ def main() -> None:
         help=f"config file or yaml-format string (default: {default_config_file})",
         default=None,
     )
-    # config for the gui
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="host interface for the local web service (default: 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="port for the local web service (default: 8080)",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="do not open a browser window",
+    )
     parser.add_argument(
         "--with-image-data",
         dest="with_image_data",
@@ -272,7 +224,7 @@ def main() -> None:
         action=_DeprecatedAlias,
         help=r"yaml string of label specific flags OR file containing json "
         r"string of label specific flags (ex. {person-\d+: [male, tall], "
-        r"dog-\d+: [black, brown, white], .*: [occluded]})",  # NOQA
+        r"dog-\d+: [black, brown, white], .*: [occluded]})",
         default=argparse.SUPPRESS,
     )
     parser.add_argument(
@@ -301,14 +253,23 @@ def main() -> None:
         help="epsilon to find nearest vertex on canvas",
         default=argparse.SUPPRESS,
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.output is not None and is_label_file_path(filename=args.output):
+        parser.error(
+            f"--output expects a directory path, but '{args.output}' looks like a file."
+            " Remove the .json extension or provide a directory path."
+        )
+    return args
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
 
     if args.version:
         print(f"{__appname__} {__version__}")
         sys.exit(0)
 
     _setup_loguru(logger_level=args.logger_level.upper())
-    _route_qt_logging_to_loguru()
     logger.info("Starting {} {}", __appname__, __version__)
 
     sys.excepthook = _handle_exception
@@ -326,77 +287,46 @@ def main() -> None:
         else:
             args.label_flags = _yaml.safe_load(args.label_flags)
 
-    config_from_args = args.__dict__
+    config_from_args = vars(args).copy()
     config_from_args.pop("version")
     reset_config = config_from_args.pop("reset_config")
     file_or_dir = config_from_args.pop("path")
     output = config_from_args.pop("output")
-    # logger_level configures loguru, not user config; excluding it keeps the
-    # Settings dialog enabled (any override disables it).
     config_from_args.pop("logger_level")
+    host = config_from_args.pop("host")
+    port = config_from_args.pop("port")
+    no_browser = config_from_args.pop("no_browser")
 
     config_file, config_overrides = _resolve_config_source(
         config_arg=config_from_args.pop("config"),
-        default_config_file=default_config_file,
+        default_config_file=_config.get_user_config_file(),
     )
     config_overrides.update(config_from_args)
 
-    output_dir = None
-    if output is not None:
-        if is_label_file_path(filename=output):
-            parser.error(
-                f"--output expects a directory path, but '{output}' looks like a file."
-                " Remove the .json extension or provide a directory path."
-            )
-        output_dir = output
+    output_dir = Path(output) if output is not None else None
 
-    # Read the language and color theme before QApplication exists so the
-    # translator and palette are set before any widget is built. MainWindow
-    # re-reads the same config; both reads are pure (load_config never writes), so
-    # the duplicate parse is harmless.
-    try:
-        loaded_config = _config.load_config(
-            config_file=config_file, config_overrides=config_overrides
-        )
-        language = loaded_config.get("language")
-        color_theme = loaded_config.get("color_theme", "system")
-    except Exception as e:
-        logger.debug("Could not read config: {}", e)
-        language = None
-        color_theme = "system"
-    # A stale or hand-edited language code with no bundled translation follows the
-    # system locale, matching the Settings dialog.
-    if not _locale.is_valid_language(language):
-        language = None
-    translator = QtCore.QTranslator()
-    translator.load(
-        language or QtCore.QLocale.system().name(),
-        str(_locale.TRANSLATE_DIR),
-    )
-    app = QtWidgets.QApplication(sys.argv)
-    app.setStyle("Fusion")  # for consistent appearance across platforms
-    apply_color_theme(theme=color_theme)
-    app.setApplicationName(__appname__)
-    app.setWindowIcon(new_icon("icon-256.png"))
-    app.installTranslator(translator)
-    win = MainWindow(
+    if reset_config:
+        logger.info("--reset-config is ignored: the web UI does not store window state")
+
+    session = build_session(
         config_file=config_file,
         config_overrides=config_overrides,
         file_or_dir=file_or_dir,
         output_dir=output_dir,
     )
+    app = create_app(session=session)
 
-    if reset_config:
-        logger.info(f"Resetting window state: {win._window_state.fileName()}")
-        win._window_state.clear()
-        sys.exit(0)
+    url = f"http://{host}:{port}"
+    logger.info("Serving Labelme at {}", url)
+    print(f"{__appname__} {__version__}")
+    print(f"Open {url} in your browser")
+    if not no_browser:
+        webbrowser.open(url)
 
-    with contextlib.redirect_stderr(new_target=_LoggerIO()):
-        win.show()
-        win.raise_()
-        sys.exit(app.exec())
+    import uvicorn
+
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
-# this main block is required to generate executable by pyinstaller
 if __name__ == "__main__":
     main()

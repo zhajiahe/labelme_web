@@ -31,9 +31,9 @@
 ## Description
 
 Labelme is a graphical image annotation tool inspired by <http://labelme.csail.mit.edu>.\
-It is written in Python and uses Qt for its graphical interface.
+It is written in Python and runs as a local web application in your browser.
 
-> Looking for a simple install without Python or Qt? Get the standalone app at **[labelme.io](https://labelme.io)**.
+> Looking for a simple install without Python? Get the standalone app at **[labelme.io](https://labelme.io)**.
 
 <img src="examples/instance_segmentation/data_dataset_voc/JPEGImages/2011_000006.jpg" width="19%" /> <img src="examples/instance_segmentation/data_dataset_voc/SegmentationClass/2011_000006.png" width="19%" /> <img src="examples/instance_segmentation/data_dataset_voc/SegmentationClassVisualization/2011_000006.jpg" width="19%" /> <img src="examples/instance_segmentation/data_dataset_voc/SegmentationObject/2011_000006.png" width="19%" /> <img src="examples/instance_segmentation/data_dataset_voc/SegmentationObjectVisualization/2011_000006.jpg" width="19%" />\
 <i>VOC dataset example of instance segmentation.</i>
@@ -77,7 +77,7 @@ pip install labelme
 
 ### Option 2: Using standalone executable (Easiest)
 
-If you're willing to invest in the convenience of simple installation without any dependencies (Python, Qt),
+If you're willing to invest in the convenience of simple installation without any dependencies (Python),
 you can download the standalone executable from ["Install Labelme as App"](https://www.labelme.io/docs/install-labelme-app).
 
 It's a one-time payment for lifetime access, and it helps us to maintain this project.
@@ -93,10 +93,10 @@ On some Linux distributions, labelme is also packaged in the system's native rep
 |        | Supported (v7.x)               | Maintenance (v6.3.x) |
 | ------ | ------------------------------ | -------------------- |
 | Python | 3.12 - 3.14                    | 3.10 - 3.11          |
-| Qt     | Qt6 (PySide6)                  | Qt5                  |
+| UI     | Local web app (FastAPI)        | Qt5 desktop          |
 | OS     | 64-bit macOS / Windows / Linux | older OSes           |
 
-labelme follows [SPEC 0](https://scientific-python.org/specs/spec-0000/) (the successor to [NEP 29](https://numpy.org/neps/nep-0029-deprecation_policy.html)) for dropping Python versions, in step with its core scientific dependencies (numpy, scipy, scikit-image). v6.3.x is the maintenance line for Qt5 and Python 3.10 / 3.11 stragglers.
+labelme follows [SPEC 0](https://scientific-python.org/specs/spec-0000/) (the successor to [NEP 29](https://numpy.org/neps/nep-0029-deprecation_policy.html)) for dropping Python versions, in step with its core scientific dependencies (numpy, scipy, scikit-image). v6.3.x is the maintenance line for the Qt desktop UI and Python 3.10 / 3.11 stragglers.
 
 v6.3.x receives critical fixes only, on a best-effort basis with no release cadence or SLA. "Critical" is limited to:
 
@@ -110,12 +110,12 @@ Feature backports and non-critical bugs are out of scope; all new development ha
 
 v7.0.0 raises the platform floor:
 
-- **Qt binding:** the GUI moved from PyQt5 (Qt5) to PySide6 (Qt6). `pip install labelme` now pulls PySide6 instead of PyQt5.
+- **UI:** the annotator is a local web service. `labelme` starts FastAPI and opens a browser; there is no Qt/PySide window.
 - **Python:** the minimum is now Python 3.12 (3.10 and 3.11 are dropped).
-- **OS:** Qt6 requires a 64-bit macOS, Windows, or Linux; older OSes that only Qt5 supported are no longer covered.
+- **OS:** 64-bit macOS, Windows, or Linux.
 - **No public Python API:** labelme is an application, not a library, and exposes no stable Python API. Its internal modules were privatized in v7 (renamed to underscore-prefixed names), so `import labelme.app`, `labelme.utils`, `labelme.widgets`, and similar imports no longer work. If you previously imported labelme internals, pin `labelme<7` and vendor the code you need; see [`examples/utils.py`](examples/utils.py) for copy-and-adapt reference code that reads the JSON annotation format without depending on labelme.
 
-If you need to stay on PyQt5/Qt5, Python 3.10 or 3.11, or an older OS, pin to the v6.3.x maintenance line:
+If you need to stay on the Qt desktop UI, Python 3.10 or 3.11, or an older OS, pin to the v6.3.x maintenance line:
 
 ```bash
 pip install 'labelme<7'
@@ -143,7 +143,7 @@ Run `labelme --help` for detail.\
 The annotations are saved as a [JSON](http://www.json.org/) file.
 
 ```bash
-labelme  # just open gui
+labelme  # start the local web app and print http://127.0.0.1:8080
 
 # tutorial (single image example)
 cd examples/tutorial
@@ -161,7 +161,8 @@ labelme data_annotated/ --labels labels.txt  # specify label list with a file
 
 ### Command Line Arguments
 
-- `--output` specifies the location that annotations will be written to. If the location ends with .json, a single annotation will be written to this file. Only one image can be annotated if a location is specified with .json. If the location does not end with .json, the program will assume it is a directory. Annotations will be stored in this directory with a name that corresponds to the image that the annotation was made on.
+- `--output` specifies the directory that annotations will be written to. A path that looks like a `.json` file is rejected; pass a directory.
+- `--host` / `--port` bind the local web service (defaults: `127.0.0.1:8080`). `--no-browser` skips opening a window.
 - The first time you run labelme, it will create a config file at `~/.labelmerc`. Add only the settings you want to override. For all available options and their defaults, see [`default_config.yaml`](labelme/_config/default_config.yaml). If you would prefer to use a config file from another location, you can specify this file with the `--config` flag.
 - Without the `--no-sort-labels` flag, the program will list labels in alphabetical order. When the program is run with this flag, it will display labels in the order that they are provided.
 - Flags are assigned to an entire image. [Example](examples/classification)
@@ -189,11 +190,12 @@ LABELME_PATH=./labelme
 OSAM_PATH=$(python -c 'import os, osam; print(os.path.dirname(osam.__file__))')
 pyinstaller labelme/labelme/__main__.py \
   --name=Labelme \
-  --windowed \
+  --noconsole \
   --noconfirm \
   --specpath=build \
   --add-data=$(OSAM_PATH)/_models/yoloworld/clip/bpe_simple_vocab_16e6.txt.gz:osam/_models/yoloworld/clip \
   --add-data=$(LABELME_PATH)/_config/default_config.yaml:labelme/_config \
+  --add-data=$(LABELME_PATH)/_web:labelme/_web \
   --add-data=$(LABELME_PATH)/icons/*:labelme/icons \
   --add-data=$(LABELME_PATH)/translate/*:translate \
   --icon=$(LABELME_PATH)/icons/icon-256.png \

@@ -1,97 +1,22 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-from collections.abc import Callable
-from collections.abc import Generator
-from collections.abc import Iterator
 from pathlib import Path
 
 import imgviz
 import pytest
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QImageReader
-from PySide6.QtWidgets import QApplication
-from PySide6.QtWidgets import QProgressDialog
-from PySide6.QtWidgets import QWidget
-from pytestqt.qtbot import QtBot
 
 import labelme._utils
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
-        "--pause",
-        action="store_true",
-        default=False,
-        help="Pause after each GUI test until the window is closed manually.",
-    )
-    parser.addoption(
-        "--headed",
-        action="store_true",
-        default=False,
-        help="Run GUI tests with a visible window (skip QT_QPA_PLATFORM=offscreen).",
-    )
-    parser.addoption(
         "--update-snapshots",
         action="store_true",
         default=False,
-        help=(
-            "Regenerate snapshot files under tests/data/snapshots/ instead of "
-            "comparing against them. Run once to seed or update snapshots, then "
-            "commit the resulting files and re-run without this flag to verify."
-        ),
+        help="Unused compatibility flag kept so older invocations still parse.",
     )
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    if not config.getoption("--headed"):
-        os.environ["QT_QPA_PLATFORM"] = "offscreen"
-
-
-@pytest.fixture()
-def close_failed_download_dialog(
-    qapp: QApplication,
-) -> Generator[None, None, None]:
-    timer = QTimer()
-
-    def close_error_dialog() -> None:
-        for widget in qapp.topLevelWidgets():
-            if not isinstance(widget, QProgressDialog):
-                continue
-            if not widget.isVisible():
-                continue
-            if widget.labelText().startswith("Failed to download"):
-                widget.close()
-
-    timer.timeout.connect(close_error_dialog)
-    timer.start(10)
-    yield
-    timer.stop()
-
-
-@pytest.fixture()
-def pause(request: pytest.FixtureRequest) -> bool:
-    return request.config.getoption("--pause", default=False)
-
-
-@pytest.fixture()
-def update_snapshots(request: pytest.FixtureRequest) -> bool:
-    return request.config.getoption("--update-snapshots")
-
-
-@pytest.fixture()
-def snapshot_dir() -> Path:
-    # ``--update-snapshots`` must write back to the real repo tree, not a tmp copy.
-    return Path(__file__).parent / "data" / "snapshots"
-
-
-@pytest.fixture()
-def set_allocation_limit(qapp: QApplication) -> Iterator[Callable[[int], None]]:
-    original_limit = QImageReader.allocationLimit()
-    yield QImageReader.setAllocationLimit
-    QImageReader.setAllocationLimit(original_limit)
 
 
 def assert_labelfile_sanity(filename: str) -> None:
@@ -121,15 +46,6 @@ def assert_labelfile_sanity(filename: str) -> None:
         for x, y in shape["points"]:
             assert 0 <= x <= width
             assert 0 <= y <= height
-
-
-def close_or_pause(
-    *, qtbot: QtBot, widget: QWidget, pause: bool, timeout: int = 60_000
-) -> None:
-    if pause:
-        qtbot.waitUntil(lambda: not widget.isVisible(), timeout=timeout)
-    else:
-        widget.close()
 
 
 def _create_annotated_nested(data_path: Path) -> None:

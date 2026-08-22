@@ -105,14 +105,14 @@ A single Setting in the Config File whose value differs from the Default Config.
 _Avoid_: customization, change, diff.
 
 **Window State**:
-The window geometry and dock layout persisted via Qt's `QSettings` store (the `self._window_state` attribute in code), separate from Settings and never written to the Config File. Cleared by `--reset-config`.
+Browser-local UI chrome (zoom, panel visibility) that is not written to the Config File. `--reset-config` is kept for CLI compatibility and does not persist layout.
 _Avoid_: settings (those are the annotation/behavior values), config, layout config.
 
 ## Flagged ambiguities
 
 - **`Annotation` / `LabelFile` in code**: the `Annotation` type names the in-memory **Annotation** (the whole bundle); it supersedes the former `LabelData`. `LabelFile` stays as the legacy identifier for the **Annotation File** (the on-disk form). The previously-mooted `LabelFile` → `AnnotationFile` rename remains deferred. The Qt-free codec functions (`read_label_file` / `write_label_file`) and their module (`_label_file.py`) keep the `label_file` name for now; renaming them to `read_annotation_file` / `write_annotation_file` (in an `_annotation.py` module) is the matching deferred cleanup, best done together with the `LabelFile` → `AnnotationFile` rename so the module is renamed once.
-- **Concept vs file naming is an intentional split**: the user-facing values are **Settings**, but the file that persists them is the **Config File** (`~/.labelmerc`) and the CLI flag stays `--config`. The menu entry reads "Settings…" while keeping Qt's `PreferencesRole`. Do not "unify" the file/flag/role naming to "settings".
-- **`Shape` in code is the Qt-free data model**: the `Shape` type (`_shape.py`) holds only data — `points` / `point_labels` are numpy arrays, not `QtCore.QPointF`, and it imports no PyQt5. Rendering, hit-testing, and the per-shape view state (selected, fill, highlight, colors, scale) live in the canvas layer (`_widgets/_shape_render.py` + `_widgets/canvas.py`), which computes a `ShapeRenderContext` per shape at paint time. The in-progress shape being drawn is a separate QPointF `_DraftShape` (canvas-local) that becomes a `Shape` at finalize. `visible` is the one ephemeral view flag kept on `Shape` (a plain bool, not persisted) so it survives the deepcopy-based undo/backup stack.
+- **Concept vs file naming is an intentional split**: the user-facing values are **Settings**, but the file that persists them is the **Config File** (`~/.labelmerc`) and the CLI flag stays `--config`. The Settings dialog in the web UI is the comprehensive home for those values. Do not "unify" the file/flag naming to "settings".
+- **`Shape` in code is the GUI-free data model**: the `Shape` type (`_shape.py`) holds only data — `points` / `point_labels` are numpy arrays. Rendering and pointer interaction live in the web canvas (`labelme/_web/`). Hit-testing used by tests lives in `_hit.py`. `visible` is the one ephemeral view flag kept on `Shape` (a plain bool, not persisted) so it survives the deepcopy-based undo/backup stack.
 
 ## Example dialogue
 

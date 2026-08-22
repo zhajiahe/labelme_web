@@ -29,7 +29,8 @@ dependencies = [
   "onnxruntime>=1.23.2",
   "osam>=0.4.0",
   "pillow>=2.8",
-  "pyside6>=6.8",
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
   "scipy>=1.8",
   "scikit-image>=0.21",
   "tifffile>=2024.1.30",
@@ -48,6 +49,9 @@ replacement = 'src="https://raw.githubusercontent.com/wkentaro/labelme/main/\1"'
 [tool.hatch.version]
 source = "vcs"
 
+[tool.hatch.build.targets.wheel]
+packages = ["labelme"]
+
 [dependency-groups]
 dev = [
   "ipython",
@@ -56,7 +60,7 @@ dev = [
   "packaging>=25.0",
   "pytest>=8.3.4",
   "pytest-cov>=7.1.0",
-  "pytest-qt>=4.4.0",
+  "httpx>=0.27",
   "pytest-xdist>=3.8.0",
   "ruff~=0.12.11",
   "taplo>=0.9.3",
@@ -112,12 +116,7 @@ showcontent = true
 
 [tool.pytest.ini_options]
 addopts = "-m 'not network'"
-qt_api = "pyside6"
-markers = [
-  "gui: mark a test as a GUI test.",
-  "network: mark a test that accesses an external network service.",
-  "pixel_snapshot: mark a test that compares rendering against a stored pixel snapshot.",
-]
+markers = ["network: mark a test that accesses an external network service."]
 
 [tool.ruff.lint]
 select = [

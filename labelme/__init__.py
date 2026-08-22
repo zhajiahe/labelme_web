@@ -9,6 +9,6 @@ __appname__ = "Labelme"
 # e.g., 1.0.0a0, 1.0.0a1, 1.0.0b0, 1.0.0rc0, 1.0.0, 1.0.0.post0
 __version__ = importlib.metadata.version("labelme")
 
-# XXX: has to be imported before PySide6 to load dlls in order on Windows
-# https://github.com/wkentaro/labelme/issues/1564
+# Import onnxruntime early so its DLLs load before other native extensions
+# on Windows. https://github.com/wkentaro/labelme/issues/1564
 import onnxruntime

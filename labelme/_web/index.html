@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Labelme</title>
+    <link rel="icon" href="/static/favicon.png" />
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <img class="brand-icon" src="/static/favicon.png" alt="" />
+          <div>
+            <div id="title" class="title">Labelme</div>
+            <div id="status" class="status">Starting…</div>
+          </div>
+        </div>
+        <div class="top-actions">
+          <label class="file-open">
+            Open
+            <input id="open-path" type="text" placeholder="Image, JSON, or directory path" />
+          </label>
+          <button id="btn-open" type="button">Go</button>
+          <button id="btn-prev" type="button" title="Previous image">Prev</button>
+          <button id="btn-next" type="button" title="Next image">Next</button>
+          <button id="btn-save" type="button" class="primary">Save</button>
+          <button id="btn-settings" type="button">Settings</button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="toolbar">
+          <button class="tool active" data-tool="edit" title="Edit (Esc)">Edit</button>
+          <button class="tool" data-tool="polygon" title="Polygon">Polygon</button>
+          <button class="tool" data-tool="rectangle" title="Rectangle">Rect</button>
+          <button class="tool" data-tool="oriented_rectangle" title="Oriented rectangle">O-Rect</button>
+          <button class="tool" data-tool="circle" title="Circle">Circle</button>
+          <button class="tool" data-tool="line" title="Line">Line</button>
+          <button class="tool" data-tool="linestrip" title="Line strip">Strip</button>
+          <button class="tool" data-tool="point" title="Point">Point</button>
+          <button class="tool" data-tool="ai_points" title="AI points">AI pts</button>
+          <button class="tool" data-tool="ai_box" title="AI box">AI box</button>
+          <hr />
+          <button id="btn-undo" type="button">Undo</button>
+          <button id="btn-delete" type="button">Delete</button>
+          <button id="btn-fit" type="button">Fit</button>
+          <label class="zoom-label">Zoom
+            <input id="zoom" type="range" min="10" max="800" value="100" />
+          </label>
+          <label class="zoom-label">Bright
+            <input id="brightness" type="range" min="-80" max="80" value="0" />
+          </label>
+          <label class="zoom-label">Contrast
+            <input id="contrast" type="range" min="-80" max="80" value="0" />
+          </label>
+        </aside>
+
+        <main class="canvas-wrap">
+          <canvas id="canvas"></canvas>
+          <div id="crosshair-x" class="crosshair hidden"></div>
+          <div id="crosshair-y" class="crosshair hidden"></div>
+        </main>
+
+        <aside class="sidebar">
+          <section>
+            <h2>Files</h2>
+            <input id="file-search" type="search" placeholder="Filter files" />
+            <ul id="file-list" class="list"></ul>
+          </section>
+          <section>
+            <h2>Shapes</h2>
+            <ul id="shape-list" class="list"></ul>
+          </section>
+          <section>
+            <h2>Labels</h2>
+            <ul id="label-list" class="list chips"></ul>
+          </section>
+          <section>
+            <h2>Flags</h2>
+            <ul id="flag-list" class="list"></ul>
+          </section>
+          <section>
+            <h2>AI Text Prompt</h2>
+            <input id="ai-text" type="text" placeholder="person, car" />
+            <div class="row">
+              <select id="ai-text-format">
+                <option value="polygon">polygon</option>
+                <option value="rectangle">rectangle</option>
+              </select>
+              <button id="btn-ai-text" type="button">Detect</button>
+            </div>
+            <select id="ai-model"></select>
+          </section>
+        </aside>
+      </div>
+    </div>
+
+    <dialog id="label-dialog">
+      <form method="dialog">
+        <h2>Shape label</h2>
+        <input id="label-input" type="text" list="label-options" autocomplete="off" />
+        <datalist id="label-options"></datalist>
+        <div id="shape-flag-list" class="flag-grid"></div>
+        <label>Group id <input id="group-id" type="number" /></label>
+        <label>Description <input id="description" type="text" /></label>
+        <menu>
+          <button value="cancel">Cancel</button>
+          <button id="label-ok" value="ok" class="primary">OK</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="settings-dialog">
+      <form method="dialog" id="settings-form">
+        <h2>Settings</h2>
+        <div id="settings-body"></div>
+        <menu>
+          <button value="close">Close</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
