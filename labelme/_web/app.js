@@ -593,8 +593,9 @@ canvas.addEventListener("mousedown", async (event) => {
     draw();
     return;
   }
-  if (["rectangle", "circle", "line", "oriented_rectangle"].includes(state.draft.shape_type)
-    && state.draft.points.length === 1) {
+  if (["rectangle", "circle", "line", "oriented_rectangle"].includes(state.draft.shape_type)) {
+    // A preview mousemove already writes points[1], so the second click must
+    // still accept the shape instead of requiring length === 1.
     state.draft.points[1] = imagePoint;
     if (state.draft.shape_type === "oriented_rectangle") {
       const [a, b] = state.draft.points;
