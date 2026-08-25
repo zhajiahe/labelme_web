@@ -921,6 +921,7 @@ dev = [
     { name = "mdformat-frontmatter" },
     { name = "mdformat-gfm" },
     { name = "packaging" },
+    { name = "playwright" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
@@ -932,9 +933,6 @@ dev = [
     { name = "types-pillow" },
     { name = "typos" },
     { name = "yamlfix" },
-]
-gui = [
-    { name = "playwright" },
 ]
 
 [package.metadata]
@@ -963,6 +961,7 @@ dev = [
     { name = "mdformat-frontmatter", specifier = ">=2.0.10" },
     { name = "mdformat-gfm", specifier = ">=1.0.0" },
     { name = "packaging", specifier = ">=25.0" },
+    { name = "playwright", specifier = ">=1.62.0" },
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
@@ -975,7 +974,6 @@ dev = [
     { name = "typos", specifier = ">=1.45.0" },
     { name = "yamlfix", specifier = ">=1.19.1" },
 ]
-gui = [{ name = "playwright", specifier = ">=1.62.0" }]
 
 [[package]]
 name = "lazy-loader"

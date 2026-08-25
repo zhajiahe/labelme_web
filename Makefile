@@ -18,8 +18,8 @@ help:
 setup:  # Setup the development environment
 	$(call exec,uv sync)
 
-setup-gui:  # Setup including Playwright for GUI tests
-	$(call exec,uv sync --group gui)
+setup-gui:  # Install Playwright Chromium for GUI tests
+	$(call exec,uv run playwright install chromium)
 
 lint:  # Lint code
 	$(call exec,uv run ruff format --check)
@@ -41,7 +41,6 @@ test:  # Run tests
 	$(call exec,uv run pytest -v tests/ $(PYTEST_ARGS))
 
 test-gui:  # Run Playwright GUI tests
-	$(call exec,uv sync --group gui)
 	$(call exec,uv run pytest -v tests/e2e/web_gui_test.py -m gui --numprocesses=1)
 
 coverage:  # Run tests with coverage

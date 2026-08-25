@@ -71,9 +71,8 @@ dev = [
   "yamlfix>=1.19.1",
   "mdformat-gfm>=1.0.0",
   "towncrier>=24.8",
+  "playwright>=1.62.0",
 ]
-gui = ["playwright>=1.62.0"]
-
 [project.scripts]
 labelme = "labelme.__main__:main"
 

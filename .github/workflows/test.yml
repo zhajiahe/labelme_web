@@ -98,7 +98,7 @@ jobs:
           activate-environment: true
       - shell: bash
         run: |
-          uv sync --group gui
+          make setup
       - name: Install Chromium
         shell: bash
         run: |
