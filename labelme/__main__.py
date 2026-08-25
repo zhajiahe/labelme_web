@@ -19,6 +19,7 @@ from labelme import __version__
 from . import _config
 from . import _yaml
 from ._label_file import is_label_file_path
+from ._webapp import bind_requires_access_token
 from ._webapp import build_session
 from ._webapp import create_app
 
@@ -189,6 +190,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="do not open a browser window",
     )
     parser.add_argument(
+        "--access-token",
+        default=None,
+        help=(
+            "require Authorization: Bearer for /api routes; generated automatically "
+            "when --host is not a loopback address"
+        ),
+    )
+    parser.add_argument(
         "--with-image-data",
         dest="with_image_data",
         action="store_true",
@@ -296,6 +305,7 @@ def main(argv: list[str] | None = None) -> None:
     host = config_from_args.pop("host")
     port = config_from_args.pop("port")
     no_browser = config_from_args.pop("no_browser")
+    access_token = config_from_args.pop("access_token")
 
     config_file, config_overrides = _resolve_config_source(
         config_arg=config_from_args.pop("config"),
@@ -314,12 +324,26 @@ def main(argv: list[str] | None = None) -> None:
         file_or_dir=file_or_dir,
         output_dir=output_dir,
     )
-    app = create_app(session=session)
+    if not access_token and bind_requires_access_token(host):
+        import secrets
+
+        access_token = secrets.token_urlsafe(24)
+    app = create_app(session=session, access_token=access_token)
 
     url = f"http://{host}:{port}"
+    if access_token:
+        url = f"{url}/?token={access_token}"
+        logger.warning(
+            "API requests require Authorization: Bearer (token printed in the URL)"
+        )
     logger.info("Serving Labelme at {}", url)
     print(f"{__appname__} {__version__}")
     print(f"Open {url} in your browser")
+    if access_token and bind_requires_access_token(host):
+        print(
+            "This bind is not loopback-only; keep the token private. "
+            "API routes reject requests without it."
+        )
     if not no_browser:
         webbrowser.open(url)
 

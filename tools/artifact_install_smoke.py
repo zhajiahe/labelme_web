@@ -24,6 +24,12 @@ def _check_packaged_resources() -> None:
     web_index = Path(labelme.__file__).parent / "_web" / "index.html"
     if not web_index.is_file():
         raise RuntimeError(f"packaged web UI is missing: {web_index}")
+    web_app = Path(labelme.__file__).parent / "_web" / "app.js"
+    if not web_app.is_file():
+        raise RuntimeError(f"packaged web UI app is missing: {web_app}")
+    web_renderer = Path(labelme.__file__).parent / "_web" / "canvas" / "renderer.js"
+    if not web_renderer.is_file():
+        raise RuntimeError(f"packaged canvas renderer is missing: {web_renderer}")
 
     locales = _locale.available_translation_locales()
     if not locales:

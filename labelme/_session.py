@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import typing
 from pathlib import Path
+from typing import Any
 from typing import Literal
 from typing import cast
 
@@ -230,8 +232,10 @@ class AnnotationSession:
         self.image_width: int | None = None
         self.image_height: int | None = None
         self.dirty = False
+        self.revision = 0
         self.file_search: str = config.get("file_search") or ""
         self._last_failed_auto_save_path: str | None = None
+        self._lock = threading.RLock()
 
     @property
     def settings_editable(self) -> bool:
@@ -264,6 +268,86 @@ class AnnotationSession:
             image_or_label_path=image_path, output_dir=self.output_dir
         )
         return Path(label_path).exists()
+
+    def path_at(self, index: int) -> str:
+        """Return the Image path at a File List index without opening it."""
+        visible = self.visible_image_paths()
+        if visible:
+            if index < 0 or index >= len(visible):
+                raise SessionLoadError(f"file index out of range: {index}")
+            return visible[index]
+        if self.image_path is not None and index == 0:
+            return self.image_path
+        if self.image_path is None:
+            raise SessionLoadError("no image is open")
+        raise SessionLoadError(f"file index out of range: {index}")
+
+    def load_annotation_bundle(
+        self, *, image_or_label_path: str
+    ) -> tuple[Annotation, str, str | None, int, int]:
+        """Read an Image and Annotation File from disk without changing current.
+
+        Returns ``(annotation, image_path, label_file_path, width, height)``.
+        """
+        image_or_label_path = os.path.normpath(image_or_label_path)
+        if not Path(image_or_label_path).exists():
+            raise SessionLoadError(f"No such file: {image_or_label_path}")
+
+        label_path = resolve_label_path(
+            image_or_label_path=image_or_label_path,
+            output_dir=self.output_dir,
+        )
+        try:
+            if Path(label_path).exists():
+                annotation = read_label_file(filename=label_path)
+                image_path = os.path.normpath(
+                    str(Path(label_path).parent / annotation.image_path)
+                )
+                label_file_path = label_path
+            else:
+                annotation = _read_image_as_annotation(image_path=image_or_label_path)
+                image_path = image_or_label_path
+                label_file_path = None
+            width, height = _image_size(annotation.image_data)
+        except (LabelFileError, OSError, ValueError) as exc:
+            raise SessionLoadError(str(exc)) from exc
+
+        flags = {key: False for key in self.config.get("flags") or []}
+        if label_file_path is not None:
+            flags.update(annotation.flags)
+        annotation = Annotation(
+            image_path=annotation.image_path,
+            image_data=annotation.image_data,
+            shapes=annotation.shapes,
+            flags=flags,
+            other_data=annotation.other_data,
+        )
+        return annotation, image_path, label_file_path, width, height
+
+    def read_image_bytes(self, index: int) -> tuple[bytes, str]:
+        """Return ``(bytes, media_type)`` for an Image index without opening it."""
+        image_path = self.path_at(index)
+        if image_path == self.image_path and self.annotation is not None:
+            data = self.annotation.image_data
+        else:
+            annotation, _, _, _, _ = self.load_annotation_bundle(
+                image_or_label_path=image_path
+            )
+            data = annotation.image_data
+        media_type = "image/png"
+        if image_path.lower().endswith((".jpg", ".jpeg")):
+            media_type = "image/jpeg"
+        return data, media_type
+
+    def read_annotation_bundle(
+        self, index: int
+    ) -> tuple[Annotation, str, str | None, int, int]:
+        """Read the persisted Annotation at ``index`` without opening it."""
+        image_path = self.path_at(index)
+        annotation, resolved_path, label_path, width, height = (
+            self.load_annotation_bundle(image_or_label_path=image_path)
+        )
+        return annotation, resolved_path, label_path, width, height
 
     def load_path(self, file_or_dir: str) -> None:
         if not file_or_dir:
@@ -331,7 +415,63 @@ class AnnotationSession:
             raise SessionSaveError("no image is open")
         if self.image_width is None or self.image_height is None:
             raise SessionSaveError("image dimensions are unknown")
+        return self._write_annotation(
+            image_path=self.image_path,
+            image_data=self.annotation.image_data,
+            image_width=self.image_width,
+            image_height=self.image_height,
+            other_data=self.annotation.other_data,
+            shapes=shapes,
+            flags=flags,
+            label_path=label_path,
+            update_current=True,
+        )
 
+    def save_index(
+        self,
+        index: int,
+        *,
+        shapes: list[ShapeDict],
+        flags: dict[str, bool],
+        label_path: str | None = None,
+    ) -> str:
+        """Persist an Annotation for ``index`` without changing the current Image."""
+        image_path = self.path_at(index)
+        if (
+            image_path == self.image_path
+            and self.annotation is not None
+            and self.image_width is not None
+            and self.image_height is not None
+        ):
+            return self.save(shapes=shapes, flags=flags, label_path=label_path)
+        annotation, resolved_path, _, width, height = self.load_annotation_bundle(
+            image_or_label_path=image_path
+        )
+        return self._write_annotation(
+            image_path=resolved_path,
+            image_data=annotation.image_data,
+            image_width=width,
+            image_height=height,
+            other_data=annotation.other_data,
+            shapes=shapes,
+            flags=flags,
+            label_path=label_path,
+            update_current=False,
+        )
+
+    def _write_annotation(
+        self,
+        *,
+        image_path: str,
+        image_data: bytes,
+        image_width: int,
+        image_height: int,
+        other_data: dict[str, Any],
+        shapes: list[ShapeDict],
+        flags: dict[str, bool],
+        label_path: str | None,
+        update_current: bool,
+    ) -> str:
         existing_labels = list(self.config.get("labels") or [])
         policy = self.config.get("validate_label")
         for shape in shapes:
@@ -344,40 +484,47 @@ class AnnotationSession:
                     f"invalid label {shape['label']!r} (validate_label={policy!r})"
                 )
 
-        target = (
-            label_path
-            or self.label_file_path
-            or resolve_label_path(
-                image_or_label_path=self.image_path, output_dir=self.output_dir
+        if (
+            label_path is None
+            and update_current
+            and image_path == self.image_path
+            and self.label_file_path
+        ):
+            target = self.label_file_path
+        else:
+            target = label_path or resolve_label_path(
+                image_or_label_path=image_path, output_dir=self.output_dir
             )
-        )
         label_dir = Path(target).parent
         try:
             label_dir.mkdir(parents=True, exist_ok=True)
             annotation = Annotation(
                 image_path=resolve_stored_image_path(
-                    image_path=self.image_path, label_dir=label_dir
+                    image_path=image_path, label_dir=label_dir
                 ),
-                image_data=self.annotation.image_data,
+                image_data=image_data,
                 shapes=shapes,
                 flags=flags,
-                other_data=self.annotation.other_data,
+                other_data=other_data,
             )
             write_label_file(
                 filename=target,
                 annotation=annotation,
-                image_height=self.image_height,
-                image_width=self.image_width,
+                image_height=image_height,
+                image_width=image_width,
                 save_image_data=bool(self.config.get("with_image_data")),
             )
         except (LabelFileError, OSError, ValueError) as exc:
-            self._last_failed_auto_save_path = target
+            if update_current:
+                self._last_failed_auto_save_path = target
             raise SessionSaveError(str(exc)) from exc
 
-        self.annotation = annotation
-        self.label_file_path = target
-        self.dirty = False
-        self._last_failed_auto_save_path = None
+        self.revision += 1
+        if update_current:
+            self.annotation = annotation
+            self.label_file_path = target
+            self.dirty = False
+            self._last_failed_auto_save_path = None
         return target
 
     def close(self) -> None:
@@ -395,40 +542,9 @@ class AnnotationSession:
         self.file_list_enabled = True
 
     def _open_image_or_label(self, *, image_or_label_path: str) -> None:
-        image_or_label_path = os.path.normpath(image_or_label_path)
-        if not Path(image_or_label_path).exists():
-            raise SessionLoadError(f"No such file: {image_or_label_path}")
-
-        label_path = resolve_label_path(
-            image_or_label_path=image_or_label_path,
-            output_dir=self.output_dir,
+        annotation, image_path, label_file_path, width, height = (
+            self.load_annotation_bundle(image_or_label_path=image_or_label_path)
         )
-        try:
-            if Path(label_path).exists():
-                annotation = read_label_file(filename=label_path)
-                image_path = os.path.normpath(
-                    str(Path(label_path).parent / annotation.image_path)
-                )
-                label_file_path = label_path
-            else:
-                annotation = _read_image_as_annotation(image_path=image_or_label_path)
-                image_path = image_or_label_path
-                label_file_path = None
-            width, height = _image_size(annotation.image_data)
-        except (LabelFileError, OSError, ValueError) as exc:
-            raise SessionLoadError(str(exc)) from exc
-
-        flags = {key: False for key in self.config.get("flags") or []}
-        if label_file_path is not None:
-            flags.update(annotation.flags)
-        annotation = Annotation(
-            image_path=annotation.image_path,
-            image_data=annotation.image_data,
-            shapes=annotation.shapes,
-            flags=flags,
-            other_data=annotation.other_data,
-        )
-
         self.annotation = annotation
         self.image_path = image_path
         self.label_file_path = label_file_path

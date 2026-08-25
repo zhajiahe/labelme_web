@@ -2,7 +2,7 @@ ifneq ($(OS),Windows_NT)
 	SHELL := bash
 endif
 
-.PHONY: help setup format lint test coverage
+.PHONY: help setup setup-gui format lint test test-gui coverage
 .DEFAULT_GOAL := help
 
 PYTEST_ARGS ?= --numprocesses=auto
@@ -17,6 +17,9 @@ help:
 
 setup:  # Setup the development environment
 	$(call exec,uv sync)
+
+setup-gui:  # Setup including Playwright for GUI tests
+	$(call exec,uv sync --group gui)
 
 lint:  # Lint code
 	$(call exec,uv run ruff format --check)
@@ -36,6 +39,10 @@ format:  # Format code
 
 test:  # Run tests
 	$(call exec,uv run pytest -v tests/ $(PYTEST_ARGS))
+
+test-gui:  # Run Playwright GUI tests
+	$(call exec,uv sync --group gui)
+	$(call exec,uv run pytest -v tests/e2e/web_gui_test.py -m gui --numprocesses=1)
 
 coverage:  # Run tests with coverage
 	$(MAKE) test PYTEST_ARGS="--cov=labelme --cov-report=term-missing"

@@ -87,3 +87,25 @@ jobs:
           MPLBACKEND: agg
         run: |-
           make test PYTEST_ARGS="-m network --numprocesses=1"
+  gui-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.12'
+          activate-environment: true
+      - shell: bash
+        run: |
+          uv sync --group gui
+      - name: Install Chromium
+        shell: bash
+        run: |
+          uv run playwright install chromium --with-deps
+      - name: GUI tests
+        shell: bash
+        env:
+          MPLBACKEND: agg
+        run: |-
+          make test-gui
