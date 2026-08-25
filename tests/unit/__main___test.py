@@ -306,3 +306,13 @@ def test_help_mentions_the_local_web_service(
         main()
     assert exc.value.code == 0
     assert "local web service" in capsys.readouterr().out
+
+
+def test_help_mentions_access_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["labelme", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 0
+    assert "--access-token" in capsys.readouterr().out

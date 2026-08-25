@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from typing import Literal
@@ -7,12 +9,18 @@ from typing import Literal
 import numpy as np
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pydantic import Field
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response as StarletteResponse
+from starlette.types import ASGIApp
 
 from labelme import __appname__
 from labelme import __version__
@@ -22,6 +30,7 @@ from . import _automation
 from . import _config
 from . import _utils
 from ._config._schema import SETTINGS
+from ._label_file import Annotation
 from ._label_file import ShapeDict
 from ._label_file import _dump_shape_to_json_obj
 from ._label_file import _load_shape_json_obj
@@ -34,6 +43,8 @@ from ._session import shapes_from_dicts
 from ._shape_color import resolve_shape_color
 
 _WEB_DIR = Path(__file__).resolve().parent / "_web"
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_PUBLIC_PATHS = frozenset({"/api/health"})
 
 
 class OpenRequest(BaseModel):
@@ -44,10 +55,15 @@ class NavigateRequest(BaseModel):
     delta: int
 
 
+class CurrentRequest(BaseModel):
+    index: int
+
+
 class SaveRequest(BaseModel):
     shapes: list[dict[str, Any]]
     flags: dict[str, bool] = Field(default_factory=dict)
     label_path: str | None = None
+    client_version: int | None = None
 
 
 class ConfigPatch(BaseModel):
@@ -74,6 +90,48 @@ class AiTextRequest(BaseModel):
     model_name: str | None = None
 
 
+def bind_requires_access_token(host: str) -> bool:
+    """Non-loopback binds expose the annotator on a network and must authenticate."""
+    return host.strip().lower() not in _LOOPBACK_HOSTS
+
+
+def _provided_access_token(request: Request) -> str | None:
+    header = request.headers.get("Authorization")
+    if header and header.lower().startswith("bearer "):
+        return header[7:].strip() or None
+    query_token = request.query_params.get("token")
+    if query_token:
+        return query_token
+    cookie_token = request.cookies.get("labelme_token")
+    if cookie_token:
+        return cookie_token
+    return None
+
+
+class _AccessTokenMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: ASGIApp, token: str) -> None:
+        super().__init__(app)
+        self._token = token
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> StarletteResponse:
+        if request.url.path in _PUBLIC_PATHS or not request.url.path.startswith(
+            "/api/"
+        ):
+            return await call_next(request)
+        if _provided_access_token(request) != self._token:
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+        response = await call_next(request)
+        response.set_cookie(
+            "labelme_token",
+            self._token,
+            httponly=True,
+            samesite="lax",
+        )
+        return response
+
+
 def _rgb_image(image_data: bytes) -> np.ndarray:
     image = _utils.img_data_to_arr(img_data=image_data)
     if image.ndim == 2:
@@ -94,9 +152,16 @@ def _session_from(request: Request) -> AnnotationSession:
     return session
 
 
-def _file_entries(session: AnnotationSession) -> list[dict[str, Any]]:
+def _file_entries(
+    session: AnnotationSession, *, offset: int, limit: int
+) -> tuple[int, list[dict[str, Any]]]:
+    visible = session.visible_image_paths()
+    if not visible and session.image_path is not None:
+        visible = [session.image_path]
+    total = len(visible)
+    page = visible[offset : offset + limit]
     entries: list[dict[str, Any]] = []
-    for index, path in enumerate(session.visible_image_paths()):
+    for index, path in enumerate(page, start=offset):
         entries.append(
             {
                 "index": index,
@@ -106,7 +171,7 @@ def _file_entries(session: AnnotationSession) -> list[dict[str, Any]]:
                 "current": path == session.image_path,
             }
         )
-    return entries
+    return total, entries
 
 
 def _settings_payload(session: AnnotationSession) -> list[dict[str, Any]]:
@@ -140,15 +205,29 @@ def _settings_payload(session: AnnotationSession) -> list[dict[str, Any]]:
     return payload
 
 
-def _annotation_payload(session: AnnotationSession) -> dict[str, Any] | None:
-    if session.annotation is None or session.image_path is None:
+def _annotation_payload(
+    session: AnnotationSession,
+    *,
+    annotation: Annotation | None = None,
+    image_path: str | None = None,
+    label_path: str | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+    dirty: bool | None = None,
+) -> dict[str, Any] | None:
+    annotation = session.annotation if annotation is None else annotation
+    image_path = session.image_path if image_path is None else image_path
+    label_path = session.label_file_path if label_path is None else label_path
+    image_width = session.image_width if image_width is None else image_width
+    image_height = session.image_height if image_height is None else image_height
+    dirty = session.dirty if dirty is None else dirty
+    if annotation is None or image_path is None:
         return None
     shapes = [
-        _dump_shape_to_json_obj(shape=shape_dict)
-        for shape_dict in session.annotation.shapes
+        _dump_shape_to_json_obj(shape=shape_dict) for shape_dict in annotation.shapes
     ]
     labels = list(session.config.get("labels") or [])
-    used_labels = [shape["label"] for shape in session.annotation.shapes]
+    used_labels = [shape["label"] for shape in annotation.shapes]
     unique_labels = list(dict.fromkeys([*labels, *used_labels]))
     if session.config.get("sort_labels"):
         unique_labels = sorted(unique_labels)
@@ -161,20 +240,50 @@ def _annotation_payload(session: AnnotationSession) -> dict[str, Any] | None:
         for index, label in enumerate(unique_labels)
     }
     return {
-        "image_path": session.image_path,
-        "label_path": session.label_file_path,
-        "flags": session.annotation.flags,
+        "image_path": image_path,
+        "label_path": label_path,
+        "flags": annotation.flags,
         "shapes": shapes,
-        "other_data": session.annotation.other_data,
-        "image_width": session.image_width,
-        "image_height": session.image_height,
-        "dirty": session.dirty,
+        "other_data": annotation.other_data,
+        "image_width": image_width,
+        "image_height": image_height,
+        "dirty": dirty,
         "colors": colors,
         "labels": unique_labels,
+        "index": session.current_index if image_path == session.image_path else None,
+    }
+
+
+def _config_payload(session: AnnotationSession) -> dict[str, Any]:
+    return {
+        "auto_save": session.config.get("auto_save"),
+        "display_label_popup": session.config.get("display_label_popup"),
+        "with_image_data": session.config.get("with_image_data"),
+        "keep_prev": session.config.get("keep_prev"),
+        "keep_prev_scale": session.config.get("keep_prev_scale"),
+        "keep_prev_brightness_contrast": session.config.get(
+            "keep_prev_brightness_contrast"
+        ),
+        "color_theme": session.config.get("color_theme", "system"),
+        "language": session.config.get("language"),
+        "labels": session.config.get("labels") or [],
+        "flags": session.config.get("flags") or [],
+        "label_flags": session.config.get("label_flags") or {},
+        "validate_label": session.config.get("validate_label"),
+        "sort_labels": session.config.get("sort_labels"),
+        "show_label_text_field": session.config.get("show_label_text_field"),
+        "label_completion": session.config.get("label_completion"),
+        "epsilon": session.config.get("epsilon"),
+        "canvas": session.config.get("canvas") or {},
+        "shape": session.config.get("shape") or {},
+        "shortcuts": session.config.get("shortcuts") or {},
+        "ai": session.config.get("ai") or {},
     }
 
 
 def _session_payload(session: AnnotationSession) -> dict[str, Any]:
+    visible = session.visible_image_paths()
+    file_count = len(visible) if visible else (1 if session.image_path else 0)
     return {
         "app_name": __appname__,
         "version": __version__,
@@ -182,34 +291,12 @@ def _session_payload(session: AnnotationSession) -> dict[str, Any]:
         "output_dir": str(session.output_dir) if session.output_dir else None,
         "file_list_enabled": session.file_list_enabled,
         "file_search": session.file_search,
-        "files": _file_entries(session),
+        "file_count": file_count,
         "current_index": session.current_index,
         "dirty": session.dirty,
+        "revision": session.revision,
         "settings_editable": session.settings_editable,
-        "config": {
-            "auto_save": session.config.get("auto_save"),
-            "display_label_popup": session.config.get("display_label_popup"),
-            "with_image_data": session.config.get("with_image_data"),
-            "keep_prev": session.config.get("keep_prev"),
-            "keep_prev_scale": session.config.get("keep_prev_scale"),
-            "keep_prev_brightness_contrast": session.config.get(
-                "keep_prev_brightness_contrast"
-            ),
-            "color_theme": session.config.get("color_theme", "system"),
-            "language": session.config.get("language"),
-            "labels": session.config.get("labels") or [],
-            "flags": session.config.get("flags") or [],
-            "label_flags": session.config.get("label_flags") or {},
-            "validate_label": session.config.get("validate_label"),
-            "sort_labels": session.config.get("sort_labels"),
-            "show_label_text_field": session.config.get("show_label_text_field"),
-            "label_completion": session.config.get("label_completion"),
-            "epsilon": session.config.get("epsilon"),
-            "canvas": session.config.get("canvas") or {},
-            "shape": session.config.get("shape") or {},
-            "shortcuts": session.config.get("shortcuts") or {},
-            "ai": session.config.get("ai") or {},
-        },
+        "config": _config_payload(session),
         "settings": _settings_payload(session),
         "ai_models": [
             {
@@ -219,6 +306,19 @@ def _session_payload(session: AnnotationSession) -> dict[str, Any]:
             }
             for option in _ai_models.AI_ASSIST_MODEL_OPTIONS
         ],
+        "annotation": _annotation_payload(session),
+    }
+
+
+def _current_payload(session: AnnotationSession) -> dict[str, Any]:
+    return {
+        "title": session.title(),
+        "current_index": session.current_index,
+        "file_count": _session_payload(session)["file_count"],
+        "dirty": session.dirty,
+        "revision": session.revision,
+        "file_search": session.file_search,
+        "file_list_enabled": session.file_list_enabled,
         "annotation": _annotation_payload(session),
     }
 
@@ -242,11 +342,16 @@ def _model_name_from_display(*, display_name: str | None, fallback: str) -> str:
     return fallback
 
 
-def create_app(session: AnnotationSession) -> FastAPI:
+def create_app(
+    session: AnnotationSession, *, access_token: str | None = None
+) -> FastAPI:
     app = FastAPI(title=__appname__, version=__version__)
     app.state.session = session
+    app.state.access_token = access_token
     app.state.ai_assist: _automation.AiAssistSession | None = None
     app.state.text_session: _automation.OsamSession | None = None
+    if access_token:
+        app.add_middleware(_AccessTokenMiddleware, token=access_token)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -272,7 +377,16 @@ def create_app(session: AnnotationSession) -> FastAPI:
             session.navigate(body.delta)
         except SessionLoadError as exc:
             raise _http_error(400, str(exc)) from exc
-        return _session_payload(session)
+        return _current_payload(session)
+
+    @app.post("/api/session/current")
+    def set_current(body: CurrentRequest, request: Request) -> dict[str, Any]:
+        session = _session_from(request)
+        try:
+            session.open_index(body.index)
+        except SessionLoadError as exc:
+            raise _http_error(400, str(exc)) from exc
+        return _current_payload(session)
 
     @app.post("/api/session/close")
     def close_file(request: Request) -> dict[str, Any]:
@@ -284,40 +398,62 @@ def create_app(session: AnnotationSession) -> FastAPI:
     def search_files(body: SearchRequest, request: Request) -> dict[str, Any]:
         session = _session_from(request)
         session.file_search = body.query
-        return _session_payload(session)
+        return {
+            "file_search": session.file_search,
+            "file_count": _session_payload(session)["file_count"],
+            "current_index": session.current_index,
+        }
 
-    def _ensure_index(session: AnnotationSession, index: int) -> None:
-        visible = session.visible_image_paths()
-        if not visible:
-            if session.annotation is None:
-                raise _http_error(404, "no image is open")
-            return
-        if index < 0 or index >= len(visible):
-            raise _http_error(404, f"file index out of range: {index}")
-        if session.image_path != visible[index]:
-            try:
-                session.open_index(index)
-            except SessionLoadError as exc:
-                raise _http_error(400, str(exc)) from exc
+    @app.get("/api/files")
+    def list_files(
+        request: Request,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=80, ge=1, le=2000),
+    ) -> dict[str, Any]:
+        session = _session_from(request)
+        total, files = _file_entries(session, offset=offset, limit=limit)
+        return {
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "current_index": session.current_index,
+            "files": files,
+        }
 
     @app.get("/api/files/{index}/image")
     def get_image(index: int, request: Request) -> Response:
         session = _session_from(request)
-        _ensure_index(session, index)
-        if session.annotation is None or session.image_path is None:
-            raise _http_error(404, "no image is open")
-        media_type = "image/png"
-        if session.image_path.lower().endswith((".jpg", ".jpeg")):
-            media_type = "image/jpeg"
-        return Response(content=session.annotation.image_data, media_type=media_type)
+        try:
+            data, media_type = session.read_image_bytes(index)
+        except SessionLoadError as exc:
+            message = str(exc)
+            status = 404 if "out of range" in message or "no image" in message else 400
+            raise _http_error(status, message) from exc
+        return Response(content=data, media_type=media_type)
 
     @app.get("/api/files/{index}/annotation")
     def get_annotation(index: int, request: Request) -> dict[str, Any]:
         session = _session_from(request)
-        _ensure_index(session, index)
-        payload = _annotation_payload(session)
+        try:
+            annotation, image_path, label_path, width, height = (
+                session.read_annotation_bundle(index)
+            )
+        except SessionLoadError as exc:
+            message = str(exc)
+            status = 404 if "out of range" in message or "no image" in message else 400
+            raise _http_error(status, message) from exc
+        payload = _annotation_payload(
+            session,
+            annotation=annotation,
+            image_path=image_path,
+            label_path=label_path,
+            image_width=width,
+            image_height=height,
+            dirty=False,
+        )
         if payload is None:
             raise _http_error(404, "no image is open")
+        payload["index"] = index
         return payload
 
     @app.put("/api/files/{index}/annotation")
@@ -325,18 +461,27 @@ def create_app(session: AnnotationSession) -> FastAPI:
         index: int, body: SaveRequest, request: Request
     ) -> dict[str, Any]:
         session = _session_from(request)
-        _ensure_index(session, index)
         try:
-            label_path = session.save(
+            saved_path = session.save_index(
+                index,
                 shapes=_parse_shapes(body.shapes),
                 flags=body.flags,
                 label_path=body.label_path,
             )
+        except SessionLoadError as exc:
+            raise _http_error(404, str(exc)) from exc
         except SessionSaveError as exc:
             raise _http_error(400, str(exc)) from exc
-        payload = _session_payload(session)
-        payload["saved_path"] = label_path
-        return payload
+        return {
+            "ok": True,
+            "revision": session.revision,
+            "saved_path": saved_path,
+            "saved_at": datetime.now(tz=UTC).isoformat(),
+            "client_version": body.client_version,
+            "index": index,
+            "current_index": session.current_index,
+            "has_annotation": True,
+        }
 
     @app.patch("/api/config")
     def patch_config(body: ConfigPatch, request: Request) -> dict[str, Any]:
@@ -358,7 +503,11 @@ def create_app(session: AnnotationSession) -> FastAPI:
             )
         except (OSError, ValueError, TypeError) as exc:
             raise _http_error(400, str(exc)) from exc
-        return _session_payload(session)
+        return {
+            "config": _config_payload(session),
+            "settings": _settings_payload(session),
+            "settings_editable": session.settings_editable,
+        }
 
     @app.post("/api/ai/assist")
     def ai_assist(body: AiAssistRequest, request: Request) -> dict[str, Any]:

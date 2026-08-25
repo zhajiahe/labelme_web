@@ -44,6 +44,7 @@
           <button class="tool" data-tool="ai_box" title="AI box">AI box</button>
           <hr />
           <button id="btn-undo" type="button">Undo</button>
+          <button id="btn-redo" type="button">Redo</button>
           <button id="btn-delete" type="button">Delete</button>
           <button id="btn-fit" type="button">Fit</button>
           <label class="zoom-label">Zoom
@@ -67,7 +68,10 @@
           <section>
             <h2>Files</h2>
             <input id="file-search" type="search" placeholder="Filter files" />
-            <ul id="file-list" class="list"></ul>
+            <div id="file-list-viewport" class="file-list-viewport">
+              <div id="file-list-spacer" class="file-list-spacer"></div>
+              <ul id="file-list" class="list virtual"></ul>
+            </div>
           </section>
           <section>
             <h2>Shapes</h2>
@@ -108,6 +112,18 @@
         <menu>
           <button value="cancel">Cancel</button>
           <button id="label-ok" value="ok" class="primary">OK</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="unsaved-dialog">
+      <form method="dialog">
+        <h2>Unsaved changes</h2>
+        <p>This Image has unsaved Shapes. Save before leaving?</p>
+        <menu>
+          <button value="cancel">Cancel</button>
+          <button value="discard">Don't save</button>
+          <button value="save" class="primary">Save and continue</button>
         </menu>
       </form>
     </dialog>

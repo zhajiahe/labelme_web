@@ -71,8 +71,8 @@ dev = [
   "yamlfix>=1.19.1",
   "mdformat-gfm>=1.0.0",
   "towncrier>=24.8",
+  "playwright>=1.62.0",
 ]
-
 [project.scripts]
 labelme = "labelme.__main__:main"
 
@@ -115,8 +115,11 @@ name = "Security"
 showcontent = true
 
 [tool.pytest.ini_options]
-addopts = "-m 'not network'"
-markers = ["network: mark a test that accesses an external network service."]
+addopts = "-m 'not network and not gui'"
+markers = [
+  "network: mark a test that accesses an external network service.",
+  "gui: browser tests that drive the web UI with Playwright.",
+]
 
 [tool.ruff.lint]
 select = [

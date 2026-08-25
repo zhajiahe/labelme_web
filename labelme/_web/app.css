@@ -175,6 +175,25 @@ button:hover {
   display: none;
 }
 
+.file-list-viewport {
+  position: relative;
+  height: 240px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.file-list-spacer {
+  width: 100%;
+}
+
+#file-list.virtual {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
 .list {
   list-style: none;
   margin: 0;

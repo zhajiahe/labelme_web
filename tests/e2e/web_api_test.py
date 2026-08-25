@@ -3,25 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from labelme._config import load_config
 from labelme._session import AnnotationSession
 from labelme._webapp import create_app
-
-
-@pytest.fixture()
-def client(data_path: Path) -> TestClient:
-    config = load_config(config_file=None, config_overrides={"auto_save": False})
-    session = AnnotationSession(
-        config=config,
-        config_file=None,
-        config_overrides={"auto_save": False},
-        output_dir=None,
-    )
-    session.load_path(str(data_path / "annotated"))
-    return TestClient(create_app(session=session))
 
 
 def test_health_and_spa(client: TestClient) -> None:
@@ -33,19 +19,25 @@ def test_health_and_spa(client: TestClient) -> None:
     assert page.status_code == 200
     assert "Labelme" in page.text
     assert "canvas" in page.text
+    assert 'type="module"' in page.text
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/canvas/renderer.js").status_code == 200
 
 
 def test_session_lists_annotated_images(client: TestClient) -> None:
     payload = client.get("/api/session").json()
-    assert payload["files"]
-    assert any(file["has_annotation"] for file in payload["files"])
+    files = client.get("/api/files").json()
+    assert "files" not in payload
+    assert files["files"]
+    assert any(file["has_annotation"] for file in files["files"])
     assert payload["annotation"] is not None
     assert payload["annotation"]["shapes"]
+    assert payload["file_count"] == files["total"]
 
 
-def test_annotation_round_trip(client: TestClient, data_path: Path) -> None:
-    session = client.get("/api/session").json()
-    index = next(file["index"] for file in session["files"] if file["current"])
+def test_annotation_round_trip(client: TestClient) -> None:
+    files = client.get("/api/files").json()["files"]
+    index = next(file["index"] for file in files if file["current"])
     annotation = client.get(f"/api/files/{index}/annotation").json()
     shapes = annotation["shapes"]
     assert shapes
@@ -62,10 +54,14 @@ def test_annotation_round_trip(client: TestClient, data_path: Path) -> None:
     )
     saved = client.put(
         f"/api/files/{index}/annotation",
-        json={"shapes": shapes, "flags": annotation["flags"]},
+        json={"shapes": shapes, "flags": annotation["flags"], "client_version": 1},
     )
     assert saved.status_code == 200
-    saved_path = Path(saved.json()["saved_path"])
+    body = saved.json()
+    assert body["ok"] is True
+    assert "files" not in body
+    assert body["client_version"] == 1
+    saved_path = Path(body["saved_path"])
     assert saved_path.exists()
     on_disk = json.loads(saved_path.read_text(encoding="utf-8"))
     labels = [shape["label"] for shape in on_disk["shapes"]]
@@ -73,15 +69,21 @@ def test_annotation_round_trip(client: TestClient, data_path: Path) -> None:
 
 
 def test_navigation_and_image_bytes(client: TestClient) -> None:
-    session = client.get("/api/session").json()
-    assert len(session["files"]) >= 2
-    first = session["files"][0]["path"]
+    files = client.get("/api/files").json()["files"]
+    assert len(files) >= 2
+    first = files[0]["path"]
+    started = client.get("/api/session").json()["current_index"]
     moved = client.post("/api/session/navigate", json={"delta": 1})
     assert moved.status_code == 200
     assert moved.json()["annotation"]["image_path"] != first
-    image = client.get("/api/files/1/image")
+    image = client.get("/api/files/0/image")
     assert image.status_code == 200
     assert image.content[:2] in (b"\xff\xd8", b"\x89P") or len(image.content) > 100
+    assert (
+        client.get("/api/session").json()["current_index"]
+        == moved.json()["current_index"]
+    )
+    assert client.get("/api/session").json()["current_index"] != started
 
 
 def test_open_rejects_missing_path(client: TestClient) -> None:
@@ -89,9 +91,7 @@ def test_open_rejects_missing_path(client: TestClient) -> None:
     assert response.status_code == 400
 
 
-def test_validate_label_rejects_unknown(
-    data_path: Path,
-) -> None:
+def test_validate_label_rejects_unknown(data_path: Path) -> None:
     config = load_config(
         config_file=None,
         config_overrides={"labels": ["cat"], "validate_label": "exact"},
